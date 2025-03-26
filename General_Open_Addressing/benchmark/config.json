@@ -1,0 +1,94 @@
+{
+  "benchmarks": [
+    {
+      "hash": "djb2",
+      "probe": "linear",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "djb2",
+      "probe": "quadratic",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "djb2",
+      "probe": "double_hash",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "sdbm",
+      "probe": "linear",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "sdbm",
+      "probe": "quadratic",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "sdbm",
+      "probe": "double_hash",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "fnv1a",
+      "probe": "linear",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "fnv1a",
+      "probe": "quadratic",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "fnv1a",
+      "probe": "double_hash",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "murmur3_32",
+      "probe": "linear",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "murmur3_32",
+      "probe": "quadratic",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "murmur3_32",
+      "probe": "double_hash",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "crc32",
+      "probe": "linear",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "crc32",
+      "probe": "quadratic",
+      "mode": "lookup",
+      "load_factor": 0.75
+    },
+    {
+      "hash": "crc32",
+      "probe": "double_hash",
+      "mode": "lookup",
+      "load_factor": 0.75
+    }
+  ]
+}

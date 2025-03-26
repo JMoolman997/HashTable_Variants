@@ -1,0 +1,36 @@
+# Ignore build artifacts
+build/
+bin/
+*.o
+*.a
+*.so
+*.out
+*.exe
+*.dll
+
+# Ignore backup and temporary files
+*~
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# Ignore debugging files
+*.dSYM/
+*.core
+core.*
+
+# Ignore logs and reports
+logs/
+*.log
+*.stackdump
+
+# Vim
+*.swp
+*.swo
+*.vimbackup
+
+# Ignore directories
+/bin/
+/Unity/
+
