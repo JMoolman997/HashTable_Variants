@@ -2,7 +2,7 @@
 SRC_DIR = src
 INC_DIR = include
 TEST_DIR = test
-UNITY_DIR = ../Unity/src
+UNITY_DIR = ../external/Unity/src
 BUILD_DIR = build
 BIN_DIR = bin
 

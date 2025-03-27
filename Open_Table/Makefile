@@ -1,52 +1,64 @@
 
-# Compiler and flags
+# --- Trick to allow: make <table file name> benchmark ---
+ifndef VERSION
+  ifneq ($(firstword $(MAKECMDGOALS)),benchmark)
+    VERSION := $(firstword $(MAKECMDGOALS))
+    $(eval MAKECMDGOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS)))
+  endif
+endif
+# ---------------------------------------------------------
+
+# Compiler settings
 CC = gcc
-CFLAGS = -Wall -Wextra -g -std=c99 -Iinclude -I../Unity/src
+CXX = g++
+CFLAGS = -Wall -Wextra -g -std=c99 -Iinclude -I../external/Unity/src
+CXXFLAGS = -Wall -Wextra -g -std=c++11 -Iinclude -I../external/Unity/src -I../external/benchmark/include
 
 # Directories
 SRC_DIR = src
-TEST_DIR = test
 BUILD_DIR = build
+TEST_DIR = test
 
-# Default version (if no version is provided via the command line)
-VERSION ?= open_table
-
-# Source files
+# Regular build for the table implementation
 SRC = $(SRC_DIR)/$(VERSION).c
-TEST_SRC = $(TEST_DIR)/test_open_table.c
-UNITY_SRC = ../Unity/src/unity.c
-
-# Object files
 OBJ = $(BUILD_DIR)/$(VERSION).o
-TEST_OBJS = $(BUILD_DIR)/test_open_table.o $(BUILD_DIR)/unity.o $(OBJ)
 
-# Targets
-.PHONY: all test clean
+.PHONY: all test clean benchmark
 
-# 'all' builds the specified version
+# 'all' builds the specified table version (e.g. open_table)
 all: $(OBJ)
 
-# Compile the version from src/
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Compile the test file
-$(BUILD_DIR)/test_open_table.o: $(TEST_SRC)
-	$(CC) $(CFLAGS) -c $< -o $@
+# Catch-all rule so that "make open_table" sets VERSION appropriately
+%:
+	@$(MAKE) all VERSION=$@
 
-# Compile Unity framework
-$(BUILD_DIR)/unity.o: $(UNITY_SRC)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-# 'test' target links everything together and runs the test
-test: $(TEST_OBJS)
-	$(CC) $(CFLAGS) $(TEST_OBJS) -o $(BUILD_DIR)/test_open_table
+# 'test' target: builds and runs the Unity-based tests
+test: $(OBJ)
+	$(CC) $(CFLAGS) $(OBJ) $(TEST_DIR)/test_open_table.c -I$(TEST_DIR)/unity -o $(BUILD_DIR)/test_open_table
 	./$(BUILD_DIR)/test_open_table
 
 # Clean build artifacts
 clean:
 	rm -f $(BUILD_DIR)/*
 
-# Catch-all pattern rule to allow calling "make <filename>"
-%:
-	@$(MAKE) all VERSION=$@
+# --- Benchmark target ---
+# Benchmark source file (placed in Open_Table/benchmark)
+BENCH_SRC = test/benchmark_open_table.cpp
+BENCH_OBJ = $(BUILD_DIR)/benchmark_$(VERSION).o
+BENCH_BIN = $(BUILD_DIR)/benchmark_$(VERSION)
+
+# Compile the benchmark source (with the table object as a dependency)
+$(BENCH_OBJ): $(BENCH_SRC) $(OBJ)
+	$(CXX) $(CXXFLAGS) -c $(BENCH_SRC) -o $(BENCH_OBJ)
+
+# Link the benchmark executable: combine the benchmark object and the table object.
+$(BENCH_BIN): $(BENCH_OBJ)
+	$(CXX) $(CXXFLAGS) $(BENCH_OBJ) $(OBJ) -o $(BENCH_BIN) -L../external/benchmark/build/src -lbenchmark -lpthread
+
+# 'benchmark' target: build and run the benchmark executable.
+benchmark: $(BENCH_BIN)
+	./$(BENCH_BIN)
+# --- End Benchmark target ---
