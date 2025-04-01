@@ -19,6 +19,10 @@ SRC_DIR = src
 BUILD_DIR = build
 TEST_DIR = test
 
+# Unity settings
+UNITY_SRC = ../external/Unity/src/unity.c
+UNITY_OBJ = $(BUILD_DIR)/unity.o
+
 # Regular build for the table implementation
 SRC = $(SRC_DIR)/$(VERSION).c
 OBJ = $(BUILD_DIR)/$(VERSION).o
@@ -36,8 +40,8 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@$(MAKE) all VERSION=$@
 
 # 'test' target: builds and runs the Unity-based tests
-test: $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) $(TEST_DIR)/test_open_table.c -I$(TEST_DIR)/unity -o $(BUILD_DIR)/test_open_table
+test: $(OBJ) $(UNITY_OBJ)
+	$(CC) $(CFLAGS) $(OBJ) $(UNITY_OBJ) $(TEST_DIR)/test_open_table.c -o $(BUILD_DIR)/test_open_table
 	./$(BUILD_DIR)/test_open_table
 
 # Clean build artifacts
