@@ -19,11 +19,11 @@ ZIG_GLOBAL_CACHE_DIR=.zig-cache/global zig build check
 
 ```text
 include/hash_table/        public C API
-src/core/c/                ht_map dispatcher and internal vtable contract
-src/util/c/                shared C helpers
+src/core/                  ht_map dispatcher and internal vtable contract
+src/util/                  shared C helpers
 implementations/           algorithm-family implementation tree
-bench/c/                   benchmark CLI and runners
-tests/c/                   C API test matrix
+bench/                     benchmark CLI and runners
+tests/                     C API test matrix
 docs/                      algorithm, benchmark, and history notes
 results/                   ignored local benchmark output
 build.zig                  canonical build file
@@ -40,7 +40,7 @@ Client code includes `include/hash_table/ht.h`.
 4. Use the generic `ht_*` functions.
 5. Call `ht_destroy`.
 
-Core dispatch lives in `src/core/c/ht.c`. Backend details stay out of the public
+Core dispatch lives in `src/core/ht.c`. Backend details stay out of the public
 headers.
 
 ## Implementations
@@ -80,7 +80,7 @@ make clean
 
 ## Tests
 
-The tests use `tests/c/test_registry.c` as the implementation list. Each test
+The tests use `tests/test_registry.c` as the implementation list. Each test
 case creates tables through `ht_create()` and exercises the public API.
 
 Run:
@@ -117,17 +117,17 @@ See `docs/benchmarking.md` for benchmark rules and examples.
 
 ## Connect A New Implementation
 
-1. Add the backend under `implementations/<family>/c/<variant>/`.
-2. Implement private state plus functions matching `src/core/c/ht_internal.h`.
+1. Add the backend under `implementations/<family>/<variant>/`.
+2. Implement private state plus functions matching `src/core/ht_internal.h`.
 3. Expose:
    - `<variant>_create_impl_ex(const ht_config *cfg, void **out)`
    - `<variant>_vtable(void)`
    - optional `<variant>_bind_bench_iface(...)`
 4. Add an `HT_IMPL_*` enum value in `include/hash_table/ht_types.h`.
-5. Include the backend header and add a case in `src/core/c/ht.c`.
+5. Include the backend header and add a case in `src/core/ht.c`.
 6. Add include paths and source files to `build.zig`.
-7. Add the CLI name in `bench/c/src/bench_names.c`.
-8. Add one registry entry in `tests/c/test_registry.c`.
+7. Add the CLI name in `bench/src/bench_names.c`.
+8. Add one registry entry in `tests/test_registry.c`.
 9. Run `zig build check`.
 
 That is enough for the public API tests and benchmark parser to see the backend.
