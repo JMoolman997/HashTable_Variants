@@ -34,13 +34,15 @@ Makefile                   thin zig build wrapper
 
 Client code includes `include/hash_table/ht.h`.
 
-1. Fill `ht_config` from `include/hash_table/ht_types.h`.
-2. Set `impl_kind`.
-3. Call `ht_create`.
-4. Use the generic `ht_*` functions.
-5. Call `ht_destroy`.
+1. Start from `ht_config_default`, `ht_config_fixed`, or
+   `ht_config_resizing`.
+2. Call `ht_create` for simple setup or `ht_create_ex` when the caller needs a
+   diagnostic `ht_result`.
+3. Use the generic `ht_*` functions.
+4. Call `ht_destroy`.
 
-Core dispatch lives in `src/core/ht.c`. Backend details stay out of the public
+Core dispatch lives in `src/core/ht.c`; implementation registration and stable
+names live in `src/core/ht_registry.c`. Backend details stay out of the public
 headers.
 
 ## Implementations
@@ -54,7 +56,7 @@ headers.
 - Hopscotch: `hopscotch`
 - Concurrent: `p_open_addressing`, `p_separate_chaining`, `lf_hopscotch`
 
-See `docs/algorithms.md` for design notes.
+See `docs/algorithms.md` for design notes and the public threading contract.
 
 ## Build
 
@@ -80,8 +82,9 @@ make clean
 
 ## Tests
 
-The tests use `tests/test_registry.c` as the implementation list. Each test
-case creates tables through `ht_create()` and exercises the public API.
+The tests read the same `src/core/ht_registry.c` implementation table used by
+the public API and benchmark parser. Each matrix test creates tables through
+the public API and exercises the common `ht_*` calls.
 
 Run:
 
@@ -124,18 +127,21 @@ See `docs/benchmarking.md` for benchmark rules and examples.
    - `<variant>_vtable(void)`
    - optional `<variant>_bind_bench_iface(...)`
 4. Add an `HT_IMPL_*` enum value in `include/hash_table/ht_types.h`.
-5. Include the backend header and add a case in `src/core/ht.c`.
+5. Add one entry in `src/core/ht_registry.c` with the enum, CLI name,
+   constructor, and vtable getter.
 6. Add include paths and source files to `build.zig`.
-7. Add the CLI name in `bench/src/bench_names.c`.
-8. Add one registry entry in `tests/test_registry.c`.
-9. Run `zig build check`.
+7. Add focused tests only when the backend has behavior not covered by the
+   shared matrix.
+8. Run `zig build check`.
 
-That is enough for the public API tests and benchmark parser to see the backend.
+That is enough for the public API, tests, and benchmark parser to see the
+backend.
 
 ## Style Guide
 
 - Match the style already used in nearby C files.
-- Keep function prototypes grouped under explicit section banners.
+- Keep private declarations concise; use section banners only where they make a
+  long file easier to scan.
 - Prefer multi-line declarations for non-trivial signatures.
 - Use braces for every `if`, `else`, `for`, and `while` body.
 - Wrap long expressions; keep wrapped assignments easy to scan.

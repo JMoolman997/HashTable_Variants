@@ -16,7 +16,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "backend_util.h"
+#include "backend_config.h"
+#include "capacity_util.h"
+#include "hash_util.h"
+#include "memory_util.h"
+#include "resize_stats.h"
+#include "stats_util.h"
 #include "separate_chaining_impl.h"
 #include "ht_internal.h"
 
@@ -246,8 +251,8 @@ ht_result separate_chaining_create_impl_ex(
     void           **out
 ) {
     separate_chaining_table *t;
-    size_t capacity;
-    size_t min_capacity;
+    ht_backend_config resolved;
+    ht_result rc;
 
     if (out == NULL) {
         return HT_ERR_INVALID;
@@ -258,53 +263,38 @@ ht_result separate_chaining_create_impl_ex(
         return HT_ERR_INVALID;
     }
 
+    rc = ht_backend_config_resolve(
+        cfg,
+        SEPARATE_CHAINING_DEFAULT_INITIAL_CAPACITY,
+        SEPARATE_CHAINING_DEFAULT_MIN_CAPACITY,
+        SEPARATE_CHAINING_DEFAULT_MAX_LOAD,
+        SEPARATE_CHAINING_DEFAULT_MIN_LOAD,
+        &resolved
+    );
+    if (rc != HT_OK) {
+        return rc;
+    }
+
     t = calloc(1, sizeof(*t));
     if (t == NULL) {
         return HT_ERR_OOM;
     }
 
-    capacity = (cfg->init_capacity > 0)
-        ? cfg->init_capacity
-        : SEPARATE_CHAINING_DEFAULT_INITIAL_CAPACITY;
-    capacity = next_pow2(capacity);
-
-    min_capacity = (cfg->min_capacity > 0)
-        ? cfg->min_capacity
-        : SEPARATE_CHAINING_DEFAULT_MIN_CAPACITY;
-    min_capacity = next_pow2(min_capacity);
-
-    if (capacity == 0 || min_capacity == 0) {
-        free(t);
-        return HT_ERR_INVALID;
-    }
-
-    if (capacity < min_capacity) {
-        capacity = min_capacity;
-    }
-
-    t->buckets = calloc(capacity, sizeof(*t->buckets));
+    t->buckets = calloc(resolved.capacity, sizeof(*t->buckets));
     if (t->buckets == NULL) {
         free(t);
         return HT_ERR_OOM;
     }
 
-    t->capacity     = capacity;
-    t->min_capacity = min_capacity;
+    t->capacity     = resolved.capacity;
+    t->min_capacity = resolved.min_capacity;
     t->size         = 0;
-
-    t->max_load_factor = (cfg->max_load_factor > 0.0)
-        ? cfg->max_load_factor
-        : SEPARATE_CHAINING_DEFAULT_MAX_LOAD;
-    t->min_load_factor = (cfg->min_load_factor > 0.0)
-        ? cfg->min_load_factor
-        : SEPARATE_CHAINING_DEFAULT_MIN_LOAD;
-
-    t->resize_mode   = cfg->rsz_mode;
-    t->hash_fn       = (cfg->hash_fn != NULL)
-        ? cfg->hash_fn
-        : default_hash;
-    t->hash_seed     = cfg->hash_seed;
-    t->collect_stats = cfg->collect_stats;
+    t->max_load_factor = resolved.max_load_factor;
+    t->min_load_factor = resolved.min_load_factor;
+    t->resize_mode   = resolved.resize_mode;
+    t->hash_fn       = resolved.hash_fn;
+    t->hash_seed     = resolved.hash_seed;
+    t->collect_stats = resolved.collect_stats;
 
     separate_chaining_update_bytes_used(t);
     ht_resize_stats_init(&t->stats, t->collect_stats, t->capacity);
@@ -568,16 +558,23 @@ static ht_result separate_chaining_reserve_impl(
     size_t capacity
 ) {
     separate_chaining_table *t = impl;
+    size_t target;
+    ht_result rc;
 
     if (t == NULL) {
         return HT_ERR_INVALID;
     }
 
-    if (capacity <= t->capacity) {
+    rc = ht_reserve_target(t->capacity, capacity, &target);
+    if (rc != HT_OK) {
+        return rc;
+    }
+
+    if (target == t->capacity) {
         return HT_OK;
     }
 
-    return separate_chaining_resize(t, next_pow2(capacity));
+    return separate_chaining_resize(t, target);
 }
 
 static ht_result separate_chaining_rehash_impl(
@@ -586,18 +583,18 @@ static ht_result separate_chaining_rehash_impl(
 ) {
     separate_chaining_table *t = impl;
     size_t target;
+    ht_result rc;
 
     if (t == NULL) {
         return HT_ERR_INVALID;
     }
 
-    target = (capacity > t->size) ? capacity : t->size;
-
-    if (target < t->min_capacity) {
-        target = t->min_capacity;
+    rc = ht_rehash_target(t->size, t->min_capacity, capacity, &target);
+    if (rc != HT_OK) {
+        return rc;
     }
 
-    return separate_chaining_resize(t, next_pow2(target));
+    return separate_chaining_resize(t, target);
 }
 
 static ht_result separate_chaining_get_stats_impl(
@@ -640,11 +637,16 @@ static void separate_chaining_update_bytes_used(
         return;
     }
 
-    t->stats.bytes_used =
-        sizeof(*t) +
-        t->capacity * sizeof(*t->buckets) +
-        t->size * sizeof(separate_chaining_node)
-    ;
+    t->stats.bytes_used = ht_bytes_add_array_or_max(
+        sizeof(*t),
+        t->capacity,
+        sizeof(*t->buckets)
+    );
+    t->stats.bytes_used = ht_bytes_add_array_or_max(
+        t->stats.bytes_used,
+        t->size,
+        sizeof(separate_chaining_node)
+    );
 }
 
 static void separate_chaining_free_nodes(
@@ -686,7 +688,12 @@ static ht_result separate_chaining_resize(
         new_capacity = t->min_capacity;
     }
 
-    new_capacity = next_pow2(new_capacity);
+    {
+        ht_result rc = ht_checked_next_pow2(new_capacity, &new_capacity);
+        if (rc != HT_OK) {
+            return rc;
+        }
+    }
 
     if (new_capacity == t->capacity) {
         return HT_OK;

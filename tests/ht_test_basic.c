@@ -81,6 +81,43 @@ fail:
     return -1;
 }
 
+int test_mod_chaining_duplicate_no_resize(
+    ht_impl     impl,
+    const char *impl_name
+) {
+    ht_config cfg;
+    ht_map   *map = NULL;
+    size_t    before_capacity;
+
+    if (impl != HT_IMPL_BUCKET_MOD_SEPARATE_CHAINING &&
+        impl != HT_IMPL_LINKED_MOD_SEPARATE_CHAINING &&
+        impl != HT_IMPL_SEGMENTED_MOD_SEPARATE_CHAINING) {
+        return 0;
+    }
+
+    cfg = test_make_config(impl, HT_RESIZE_GROW, 8);
+    cfg.max_load_factor = 0.50;
+    map = ht_create(&cfg);
+
+    TEST_CHECK(map != NULL, "ht_create returned NULL");
+    TEST_CHECK(ht_insert(map, 1, 10) == HT_OK, "insert 1 failed");
+    TEST_CHECK(ht_insert(map, 2, 20) == HT_OK, "insert 2 failed");
+    TEST_CHECK(ht_insert(map, 3, 30) == HT_OK, "insert 3 failed");
+    TEST_CHECK(ht_insert(map, 4, 40) == HT_OK, "insert 4 failed");
+
+    before_capacity = ht_capacity(map);
+    TEST_CHECK(ht_insert(map, 2, 200) == HT_ERR_EXISTS, "duplicate was accepted");
+    TEST_CHECK(ht_size(map) == 4, "duplicate changed size");
+    TEST_CHECK(ht_capacity(map) == before_capacity, "duplicate triggered resize");
+
+    ht_destroy(map);
+    return 0;
+
+fail:
+    ht_destroy(map);
+    return -1;
+}
+
 int test_insert_multiple_get_all(
     ht_impl     impl,
     const char *impl_name

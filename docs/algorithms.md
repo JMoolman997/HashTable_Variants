@@ -4,6 +4,18 @@ The active code keeps variants that demonstrate a distinct table strategy,
 storage layout, deletion policy, metadata layout, resize model, or concurrency
 model.
 
+## Project Internals
+
+- `src/core/ht.c` is the public API dispatcher.
+- `src/core/ht_registry.c` is the single implementation/name registry used by
+  `ht_create_ex`, `ht_impl_name`, the benchmark CLI, and the test matrix.
+- `src/util/backend_config.*` normalizes backend configuration defaults,
+  capacity, load factors, hash function, resize mode, stats mode, and thread
+  count.
+- `src/util/capacity_util.h`, `hash_util.h`, `memory_util.h`,
+  `stats_util.h`, and `resize_stats.*` contain the shared helpers used by
+  backends. There is no catch-all utility umbrella.
+
 ## Public API Threading Contract
 
 - `ht_insert`, `ht_get`, `ht_remove`, and `ht_contains` are thread-safe only for

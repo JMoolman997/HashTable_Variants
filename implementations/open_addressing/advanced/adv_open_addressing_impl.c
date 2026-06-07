@@ -23,7 +23,12 @@
 #include <string.h>
 
 #include "adv_open_addressing_impl.h"
-#include "backend_util.h"
+#include "backend_config.h"
+#include "capacity_util.h"
+#include "hash_util.h"
+#include "memory_util.h"
+#include "resize_stats.h"
+#include "stats_util.h"
 #include "ht_internal.h"
 
 /* --- constants ------------------------------------------------------------ */
@@ -114,8 +119,11 @@ static inline uint16_t adv_open_addressing_bitmask_clear_first(uint16_t mask) {
 
 ht_result adv_open_addressing_create_impl_ex(const ht_config *cfg, void **out) {
   adv_open_addressing_table *t;
-  size_t capacity;
-  size_t min_capacity;
+  ht_backend_config resolved;
+  size_t ctrl_bytes;
+  size_t hashes_bytes;
+  size_t entries_bytes;
+  ht_result rc;
 
   if (out == NULL) {
     return HT_ERR_INVALID;
@@ -126,46 +134,52 @@ ht_result adv_open_addressing_create_impl_ex(const ht_config *cfg, void **out) {
     return HT_ERR_INVALID;
   }
 
+  rc = ht_backend_config_resolve(
+      cfg, DEFAULT_INITIAL_CAPACITY, DEFAULT_MIN_CAPACITY, DEFAULT_MAX_LOAD,
+      DEFAULT_MIN_LOAD, &resolved);
+  if (rc != HT_OK) {
+    return rc;
+  }
+  rc = ht_control_bytes_for_group(resolved.capacity,
+                                  ADV_OPEN_ADDRESSING_GROUP_SIZE,
+                                  ADV_OPEN_ADDRESSING_GROUP_SIZE - 1u,
+                                  &ctrl_bytes);
+  if (rc != HT_OK) {
+    return rc;
+  }
+  rc = ht_checked_mul_size(resolved.capacity, sizeof(*t->hashes),
+                           &hashes_bytes);
+  if (rc != HT_OK) {
+    return rc;
+  }
+  rc = ht_checked_mul_size(resolved.capacity, sizeof(*t->entries),
+                           &entries_bytes);
+  if (rc != HT_OK) {
+    return rc;
+  }
+
   t = calloc(1, sizeof(*t));
   if (t == NULL) {
     return HT_ERR_OOM;
   }
 
-  capacity =
-      (cfg->init_capacity > 0) ? cfg->init_capacity : DEFAULT_INITIAL_CAPACITY;
-  capacity = next_pow2(capacity);
-
-  min_capacity =
-      (cfg->min_capacity > 0) ? cfg->min_capacity : DEFAULT_MIN_CAPACITY;
-  min_capacity = next_pow2(min_capacity);
-
-  if (capacity == 0 || min_capacity == 0) {
-    free(t);
-    return HT_ERR_INVALID;
-  }
-
-  if (capacity < min_capacity) {
-    capacity = min_capacity;
-  }
-
   /* Pad the control array by 15 bytes so unaligned SIMD loads can safely read
    * the final probe group without special-case bounds checks. */
-  t->ctrl = malloc(capacity + ADV_OPEN_ADDRESSING_GROUP_SIZE - 1);
+  t->ctrl = malloc(ctrl_bytes);
   if (t->ctrl == NULL) {
     free(t);
     return HT_ERR_OOM;
   }
-  memset(t->ctrl, ADV_OPEN_ADDRESSING_CTRL_EMPTY,
-         capacity + ADV_OPEN_ADDRESSING_GROUP_SIZE - 1);
+  memset(t->ctrl, ADV_OPEN_ADDRESSING_CTRL_EMPTY, ctrl_bytes);
 
-  t->hashes = malloc(capacity * sizeof(*t->hashes));
+  t->hashes = malloc(hashes_bytes);
   if (t->hashes == NULL) {
     free(t->ctrl);
     free(t);
     return HT_ERR_OOM;
   }
 
-  t->entries = malloc(capacity * sizeof(*t->entries));
+  t->entries = malloc(entries_bytes);
   if (t->entries == NULL) {
     free(t->hashes);
     free(t->ctrl);
@@ -173,20 +187,17 @@ ht_result adv_open_addressing_create_impl_ex(const ht_config *cfg, void **out) {
     return HT_ERR_OOM;
   }
 
-  t->capacity = capacity;
-  t->min_capacity = min_capacity;
+  t->capacity = resolved.capacity;
+  t->min_capacity = resolved.min_capacity;
   t->size = 0;
   t->used = 0;
 
-  t->max_load_factor =
-      (cfg->max_load_factor > 0.0) ? cfg->max_load_factor : DEFAULT_MAX_LOAD;
-  t->min_load_factor =
-      (cfg->min_load_factor > 0.0) ? cfg->min_load_factor : DEFAULT_MIN_LOAD;
-
-  t->resize_mode = cfg->rsz_mode;
-  t->hash_fn = (cfg->hash_fn != NULL) ? cfg->hash_fn : default_hash;
-  t->hash_seed = cfg->hash_seed;
-  t->collect_stats = cfg->collect_stats;
+  t->max_load_factor = resolved.max_load_factor;
+  t->min_load_factor = resolved.min_load_factor;
+  t->resize_mode = resolved.resize_mode;
+  t->hash_fn = resolved.hash_fn;
+  t->hash_seed = resolved.hash_seed;
+  t->collect_stats = resolved.collect_stats;
 
   adv_open_addressing_update_bytes_used(t);
   ht_resize_stats_init(&t->stats, t->collect_stats, t->capacity);
@@ -453,33 +464,39 @@ static double adv_open_addressing_load_factor_impl(const void *impl) {
 
 static ht_result adv_open_addressing_reserve_impl(void *impl, size_t capacity) {
   adv_open_addressing_table *t = impl;
+  size_t target;
+  ht_result rc;
 
   if (t == NULL) {
     return HT_ERR_INVALID;
   }
 
-  if (capacity <= t->capacity) {
+  rc = ht_reserve_target(t->capacity, capacity, &target);
+  if (rc != HT_OK) {
+    return rc;
+  }
+  if (target == t->capacity) {
     return HT_OK;
   }
 
-  return adv_open_addressing_resize(t, next_pow2(capacity));
+  return adv_open_addressing_resize(t, target);
 }
 
 static ht_result adv_open_addressing_rehash_impl(void *impl, size_t capacity) {
   adv_open_addressing_table *t = impl;
   size_t target;
+  ht_result rc;
 
   if (t == NULL) {
     return HT_ERR_INVALID;
   }
 
-  target = (capacity > t->size) ? capacity : t->size;
-
-  if (target < t->min_capacity) {
-    target = t->min_capacity;
+  rc = ht_rehash_target(t->size, t->min_capacity, capacity, &target);
+  if (rc != HT_OK) {
+    return rc;
   }
 
-  return adv_open_addressing_resize(t, next_pow2(target));
+  return adv_open_addressing_resize(t, target);
 }
 
 static ht_result adv_open_addressing_get_stats_impl(const void *impl,
@@ -521,9 +538,13 @@ adv_open_addressing_update_bytes_used(adv_open_addressing_table *t) {
   }
 
   bytes = sizeof(*t);
-  ctrl_bytes =
-      ht_bytes_add_or_max(t->capacity, ADV_OPEN_ADDRESSING_GROUP_SIZE - 1);
-  bytes = ht_bytes_add_or_max(bytes, ctrl_bytes);
+  if (ht_control_bytes_for_group(t->capacity, ADV_OPEN_ADDRESSING_GROUP_SIZE,
+                                 ADV_OPEN_ADDRESSING_GROUP_SIZE - 1u,
+                                 &ctrl_bytes) != HT_OK) {
+    bytes = SIZE_MAX;
+  } else {
+    bytes = ht_bytes_add_or_max(bytes, ctrl_bytes);
+  }
   bytes = ht_bytes_add_array_or_max(bytes, t->capacity, sizeof(*t->hashes));
   bytes = ht_bytes_add_array_or_max(bytes, t->capacity, sizeof(*t->entries));
   t->stats.bytes_used = bytes;
@@ -565,9 +586,9 @@ static ht_result adv_open_addressing_resize(adv_open_addressing_table *t,
   if (new_capacity < t->min_capacity) {
     new_capacity = t->min_capacity;
   }
-  new_capacity = next_pow2(new_capacity);
-  if (new_capacity == 0) {
-    return HT_ERR_OOM;
+  rc = ht_checked_next_pow2(new_capacity, &new_capacity);
+  if (rc != HT_OK) {
+    return rc;
   }
   if (new_capacity == t->capacity) {
     return HT_OK;
@@ -581,13 +602,19 @@ static ht_result adv_open_addressing_resize(adv_open_addressing_table *t,
   old_used = t->used;
   resize_start_ns = ht_resize_instrumentation_start(t->collect_stats);
 
-  ctrl_bytes =
-      ht_bytes_add_or_max(new_capacity, ADV_OPEN_ADDRESSING_GROUP_SIZE - 1);
-  hashes_bytes = ht_bytes_mul_or_max(new_capacity, sizeof(*new_hashes));
-  entries_bytes = ht_bytes_mul_or_max(new_capacity, sizeof(*new_entries));
-  if (ctrl_bytes == SIZE_MAX || hashes_bytes == SIZE_MAX ||
-      entries_bytes == SIZE_MAX) {
-    return HT_ERR_OOM;
+  rc = ht_control_bytes_for_group(new_capacity, ADV_OPEN_ADDRESSING_GROUP_SIZE,
+                                  ADV_OPEN_ADDRESSING_GROUP_SIZE - 1u,
+                                  &ctrl_bytes);
+  if (rc != HT_OK) {
+    return rc;
+  }
+  rc = ht_checked_mul_size(new_capacity, sizeof(*new_hashes), &hashes_bytes);
+  if (rc != HT_OK) {
+    return rc;
+  }
+  rc = ht_checked_mul_size(new_capacity, sizeof(*new_entries), &entries_bytes);
+  if (rc != HT_OK) {
+    return rc;
   }
 
   new_ctrl = malloc(ctrl_bytes);

@@ -22,7 +22,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "backend_util.h"
+#include "backend_config.h"
+#include "capacity_util.h"
+#include "hash_util.h"
+#include "memory_util.h"
+#include "resize_stats.h"
+#include "stats_util.h"
 #include "ht_internal.h"
 #include "p_separate_chaining.h"
 #include "slab_pool.h"

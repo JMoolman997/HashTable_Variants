@@ -21,21 +21,7 @@
 
 #include "ht.h"
 #include "ht_internal.h"
-#include "hopscotch_impl.h"
-#include "lf_hopscotch_impl.h"
-#include "open_addressing_impl.h"
-#include "p_open_addressing.h"
-#include "p_separate_chaining.h"
-#include "adv_open_addressing_impl.h"
-#include "separate_chaining_impl.h"
-#include "mod_separate_chaining_impl.h"
-#include "backshift_impl.h"
-#include "robin_hood_impl.h"
-#include "metadata_impl.h"
-#include "simd_impl.h"
-#include "fingerprint_impl.h"
-#include "linear_hashing_impl.h"
-#include "adv_separate_chaining.h"
+#include "ht_registry.h"
 
 /* --- function prototypes -------------------------------------------------- */
 
@@ -49,12 +35,6 @@
  */
 static int ht_map_is_invalid(
     const ht_map *map
-);
-
-static ht_result ht_create_backend(
-    const ht_config       *cfg,
-    void                 **impl_out,
-    const struct ht_vtable **vt_out
 );
 
 static ht_result ht_config_validate(
@@ -129,103 +109,6 @@ static ht_result ht_config_validate(
     return HT_OK;
 }
 
-static ht_result ht_create_backend(
-    const ht_config       *cfg,
-    void                 **impl_out,
-    const struct ht_vtable **vt_out
-) {
-    if (cfg == NULL || impl_out == NULL || vt_out == NULL) {
-        return HT_ERR_INVALID;
-    }
-
-    *impl_out = NULL;
-    *vt_out   = NULL;
-
-    switch (cfg->impl_kind) {
-    case HT_IMPL_OPEN_ADDRESSING:
-        *vt_out = open_addressing_vtable();
-        return open_addressing_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_P_OPEN_ADDRESSING:
-        *vt_out = p_open_addressing_vtable();
-        return p_open_addressing_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_P_SEPARATE_CHAINING:
-        *vt_out = p_separate_chaining_vtable();
-        return p_separate_chaining_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_ADV_OPEN_ADDRESSING:
-        *vt_out = adv_open_addressing_vtable();
-        return adv_open_addressing_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_SEPARATE_CHAINING:
-        *vt_out = separate_chaining_vtable();
-        return separate_chaining_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_BUCKET_MOD_SEPARATE_CHAINING:
-    case HT_IMPL_LINKED_MOD_SEPARATE_CHAINING:
-    case HT_IMPL_SEGMENTED_MOD_SEPARATE_CHAINING:
-        *vt_out = mod_separate_chaining_vtable();
-        return mod_separate_chaining_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_HOPSCOTCH:
-        *vt_out = hopscotch_vtable();
-        return hopscotch_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_LF_HOPSCOTCH:
-        *vt_out = lf_hopscotch_vtable();
-        return lf_hopscotch_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_ROBIN_HOOD:
-        *vt_out = robin_hood_vtable();
-        return robin_hood_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_BACKSHIFT:
-        *vt_out = backshift_vtable();
-        return backshift_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_METADATA:
-        *vt_out = metadata_vtable();
-        return metadata_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_SIMD:
-        *vt_out = simd_vtable();
-        return simd_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_FINGERPRINT:
-        *vt_out = fingerprint_vtable();
-        return fingerprint_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_LINEAR_HASHING:
-        *vt_out = linear_hashing_vtable();
-        return linear_hashing_create_impl_ex(cfg, impl_out);
-        break;
-
-    case HT_IMPL_ADV_SEPARATE_CHAINING:
-        *vt_out = adv_separate_chaining_vtable();
-        return adv_separate_chaining_create_impl_ex(cfg, impl_out);
-        break;
-
-    default:
-        return HT_ERR_UNSUPPORTED;
-    }
-
-    return HT_ERR_UNSUPPORTED;
-}
-
 ht_config ht_config_default(ht_impl impl) {
     ht_config cfg = {0};
 
@@ -286,7 +169,7 @@ ht_result ht_create_ex(const ht_config *cfg, ht_map **out) {
     map->impl = NULL;
     map->kind = cfg->impl_kind;
 
-    rc = ht_create_backend(cfg, &map->impl, &map->vt);
+    rc = ht_registry_create_backend(cfg, &map->impl, &map->vt);
     if (rc != HT_OK) {
         free(map);
         return rc;
@@ -417,44 +300,7 @@ ht_result ht_reset_stats(ht_map *map) {
 }
 
 const char *ht_impl_name(ht_impl impl) {
-    switch (impl) {
-    case HT_IMPL_OPEN_ADDRESSING:
-        return "open_addressing";
-    case HT_IMPL_ROBIN_HOOD:
-        return "robin_hood";
-    case HT_IMPL_SEPARATE_CHAINING:
-        return "separate_chaining";
-    case HT_IMPL_HOPSCOTCH:
-        return "hopscotch";
-    case HT_IMPL_ADV_OPEN_ADDRESSING:
-        return "adv_open_addressing";
-    case HT_IMPL_P_OPEN_ADDRESSING:
-        return "p_open_addressing";
-    case HT_IMPL_BACKSHIFT:
-        return "backshift";
-    case HT_IMPL_METADATA:
-        return "metadata";
-    case HT_IMPL_SIMD:
-        return "simd";
-    case HT_IMPL_BUCKET_MOD_SEPARATE_CHAINING:
-        return "bucket_mod_separate_chaining";
-    case HT_IMPL_LINKED_MOD_SEPARATE_CHAINING:
-        return "linked_mod_separate_chaining";
-    case HT_IMPL_SEGMENTED_MOD_SEPARATE_CHAINING:
-        return "segmented_mod_separate_chaining";
-    case HT_IMPL_P_SEPARATE_CHAINING:
-        return "p_separate_chaining";
-    case HT_IMPL_FINGERPRINT:
-        return "fingerprint";
-    case HT_IMPL_LINEAR_HASHING:
-        return "linear_hashing";
-    case HT_IMPL_ADV_SEPARATE_CHAINING:
-        return "adv_separate_chaining";
-    case HT_IMPL_LF_HOPSCOTCH:
-        return "lf_hopscotch";
-    default:
-        return "unknown";
-    }
+    return ht_registry_impl_name(impl);
 }
 
 const char *ht_result_name(ht_result result) {

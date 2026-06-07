@@ -14,7 +14,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "backend_util.h"
+#include "backend_config.h"
+#include "capacity_util.h"
+#include "hash_util.h"
+#include "memory_util.h"
+#include "resize_stats.h"
+#include "stats_util.h"
 #include "linkedlist_bucket.h"
 #include "slab_pool.h"
 
@@ -75,7 +80,7 @@ static void linkedlist_bucket_node_free(
     linkedlist_bucket_node *node
 );
 
-linkedlist_bucket_ctx *linkedlist_bucket_ctx_create(
+static void *linkedlist_bucket_ctx_create(
     void
 ) {
     linkedlist_bucket_ctx *ctx;
@@ -97,9 +102,11 @@ linkedlist_bucket_ctx *linkedlist_bucket_ctx_create(
     return ctx;
 }
 
-void linkedlist_bucket_ctx_destroy(
-    linkedlist_bucket_ctx *ctx
+static void linkedlist_bucket_ctx_destroy(
+    void *ctx_in
 ) {
+    linkedlist_bucket_ctx *ctx = ctx_in;
+
     if (ctx == NULL) {
         return;
     }
@@ -108,23 +115,25 @@ void linkedlist_bucket_ctx_destroy(
     free(ctx);
 }
 
-linkedlist_bucket *linkedlist_bucket_array_alloc(
+static void *linkedlist_bucket_array_alloc(
     size_t capacity
 ) {
     return calloc(capacity, sizeof(linkedlist_bucket));
 }
 
-void linkedlist_bucket_array_release(
-    linkedlist_bucket *buckets
+static void linkedlist_bucket_array_release(
+    void *buckets
 ) {
     free(buckets);
 }
 
-void linkedlist_bucket_array_destroy(
-    linkedlist_bucket_ctx *ctx,
-    linkedlist_bucket *buckets,
+static void linkedlist_bucket_array_destroy(
+    void *ctx_in,
+    void *buckets_in,
     size_t capacity
 ) {
+    linkedlist_bucket_ctx *ctx = ctx_in;
+    linkedlist_bucket *buckets = buckets_in;
     size_t i;
 
     if (buckets == NULL) {
@@ -144,35 +153,26 @@ void linkedlist_bucket_array_destroy(
     free(buckets);
 }
 
-ht_result linkedlist_bucket_insert(
-    linkedlist_bucket_ctx *ctx,
-    linkedlist_bucket *buckets,
+static ht_result linkedlist_bucket_insert_absent(
+    void *ctx_in,
+    void *buckets_in,
     size_t bucket_index,
     ht_key_t key,
     ht_val_t value,
     uint64_t *probe_len_out
 ) {
+    linkedlist_bucket_ctx *ctx = ctx_in;
+    linkedlist_bucket *buckets = buckets_in;
     linkedlist_bucket_node *node;
-    uint64_t probe_len = 1;
 
     if (ctx == NULL || buckets == NULL) {
         return HT_ERR_INVALID;
     }
 
-    for (node = buckets[bucket_index]; node != NULL; node = node->next) {
-        if (node->key == key) {
-            if (probe_len_out != NULL) {
-                *probe_len_out = probe_len;
-            }
-            return HT_ERR_EXISTS;
-        }
-        probe_len++;
-    }
-
     node = linkedlist_bucket_node_alloc(ctx);
     if (node == NULL) {
         if (probe_len_out != NULL) {
-            *probe_len_out = probe_len;
+            *probe_len_out = 1;
         }
         return HT_ERR_OOM;
     }
@@ -183,20 +183,21 @@ ht_result linkedlist_bucket_insert(
     buckets[bucket_index] = node;
 
     if (probe_len_out != NULL) {
-        *probe_len_out = probe_len;
+        *probe_len_out = 1;
     }
 
     return HT_OK;
 }
 
-ht_result linkedlist_bucket_get(
-    linkedlist_bucket_ctx *ctx,
-    const linkedlist_bucket *buckets,
+static ht_result linkedlist_bucket_get(
+    void *ctx,
+    const void *buckets_in,
     size_t bucket_index,
     ht_key_t key,
     ht_val_t *value_out,
     uint64_t *probe_len_out
 ) {
+    const linkedlist_bucket *buckets = buckets_in;
     linkedlist_bucket_node *node;
     ht_result rc;
 
@@ -221,13 +222,15 @@ ht_result linkedlist_bucket_get(
     return HT_OK;
 }
 
-ht_result linkedlist_bucket_remove(
-    linkedlist_bucket_ctx *ctx,
-    linkedlist_bucket *buckets,
+static ht_result linkedlist_bucket_remove(
+    void *ctx_in,
+    void *buckets_in,
     size_t bucket_index,
     ht_key_t key,
     uint64_t *probe_len_out
 ) {
+    linkedlist_bucket_ctx *ctx = ctx_in;
+    linkedlist_bucket *buckets = buckets_in;
     linkedlist_bucket_node *node;
     linkedlist_bucket_node *prev;
     ht_result rc;
@@ -258,15 +261,17 @@ ht_result linkedlist_bucket_remove(
     return HT_OK;
 }
 
-ht_result linkedlist_bucket_rehash_all(
-    linkedlist_bucket_ctx *ctx,
-    linkedlist_bucket *old_buckets,
+static ht_result linkedlist_bucket_rehash_all(
+    void *ctx,
+    void *old_buckets_in,
     size_t old_capacity,
-    linkedlist_bucket *new_buckets,
+    void *new_buckets_in,
     size_t new_capacity,
     ht_hash_fn hash_fn,
     uint64_t hash_seed
 ) {
+    linkedlist_bucket *old_buckets = old_buckets_in;
+    linkedlist_bucket *new_buckets = new_buckets_in;
     size_t i;
 
     (void)ctx;
@@ -298,12 +303,14 @@ ht_result linkedlist_bucket_rehash_all(
     return HT_OK;
 }
 
-size_t linkedlist_bucket_extra_bytes(
-    const linkedlist_bucket_ctx *ctx,
-    const linkedlist_bucket *buckets,
+static size_t linkedlist_bucket_extra_bytes(
+    const void *ctx_in,
+    const void *buckets,
     size_t capacity,
     size_t size
 ) {
+    const linkedlist_bucket_ctx *ctx = ctx_in;
+
     (void)buckets;
     (void)capacity;
 
@@ -314,6 +321,20 @@ size_t linkedlist_bucket_extra_bytes(
     (void)size;
     return sizeof(*ctx) + slab_pool_bytes_owned(&ctx->pool);
 }
+
+const mod_separate_chaining_bucket_ops linkedlist_bucket_ops = {
+    .bucket_size = sizeof(linkedlist_bucket),
+    .ctx_create = linkedlist_bucket_ctx_create,
+    .ctx_destroy = linkedlist_bucket_ctx_destroy,
+    .array_alloc = linkedlist_bucket_array_alloc,
+    .array_release = linkedlist_bucket_array_release,
+    .array_destroy = linkedlist_bucket_array_destroy,
+    .insert_absent = linkedlist_bucket_insert_absent,
+    .get = linkedlist_bucket_get,
+    .remove = linkedlist_bucket_remove,
+    .rehash_all = linkedlist_bucket_rehash_all,
+    .extra_bytes = linkedlist_bucket_extra_bytes
+};
 
 static ht_result linkedlist_bucket_find_node(
     linkedlist_bucket head,

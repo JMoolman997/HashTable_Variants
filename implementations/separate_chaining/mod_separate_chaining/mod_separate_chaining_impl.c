@@ -16,69 +16,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "backend_util.h"
+#include "backend_config.h"
+#include "capacity_util.h"
+#include "hash_util.h"
+#include "memory_util.h"
+#include "resize_stats.h"
+#include "stats_util.h"
 #include "inline_array_bucket.h"
 #include "linkedlist_bucket.h"
 #include "mod_separate_chaining_impl.h"
 #include "segmented_bucket.h"
 #include "ht_internal.h"
-
-/**
- * @brief Dispatch table for one modified chaining bucket representation.
- */
-struct mod_separate_chaining_bucket_ops {
-    size_t bucket_size; /**< Size of one root bucket element. */
-
-    void *(*ctx_create)(void); /**< Allocate bucket implementation state. */
-    void (*ctx_destroy)(void *ctx); /**< Destroy bucket implementation state. */
-    void *(*array_alloc)(size_t capacity); /**< Allocate root bucket array. */
-    void (*array_release)(void *buckets); /**< Free root array only. */
-    void (*array_destroy)(void *ctx, void *buckets, size_t capacity);
-    /**< Free root array and owned overflow storage. */
-
-    ht_result (*insert)(
-        void *ctx,
-        void *buckets,
-        size_t bucket_index,
-        ht_key_t key,
-        ht_val_t value,
-        uint64_t *probe_len_out
-    ); /**< Insert into one selected bucket. */
-
-    ht_result (*get)(
-        void *ctx,
-        const void *buckets,
-        size_t bucket_index,
-        ht_key_t key,
-        ht_val_t *value_out,
-        uint64_t *probe_len_out
-    ); /**< Lookup within one selected bucket. */
-
-    ht_result (*remove)(
-        void *ctx,
-        void *buckets,
-        size_t bucket_index,
-        ht_key_t key,
-        uint64_t *probe_len_out
-    ); /**< Remove from one selected bucket. */
-
-    ht_result (*rehash_all)(
-        void *ctx,
-        void *old_buckets,
-        size_t old_capacity,
-        void *new_buckets,
-        size_t new_capacity,
-        ht_hash_fn hash_fn,
-        uint64_t hash_seed
-    ); /**< Move all entries into a new root bucket array. */
-
-    size_t (*extra_bytes)(
-        const void *ctx,
-        const void *buckets,
-        size_t capacity,
-        size_t size
-    ); /**< Report non-root memory owned by the bucket backend. */
-};
 
 /* --- function prototypes -------------------------------------------------- */
 
@@ -259,199 +207,19 @@ static ht_result mod_separate_chaining_resize(
 /* bucket variant dispatch                                                   */
 /* ------------------------------------------------------------------------- */
 
-#define DEFINE_BUCKET_ADAPTER(ADAPTER, BUCKET_PREFIX, CTX_TYPE, BUCKET_TYPE) \
-    static void *ADAPTER##_ctx_create(void) {                                \
-        return BUCKET_PREFIX##_ctx_create();                                 \
-    }                                                                        \
-                                                                             \
-    static void ADAPTER##_ctx_destroy(void *ctx) {                           \
-        BUCKET_PREFIX##_ctx_destroy((CTX_TYPE *)ctx);                        \
-    }                                                                        \
-                                                                             \
-    static void *ADAPTER##_array_alloc(size_t capacity) {                    \
-        return BUCKET_PREFIX##_array_alloc(capacity);                        \
-    }                                                                        \
-                                                                             \
-    static void ADAPTER##_array_release(void *buckets) {                     \
-        BUCKET_PREFIX##_array_release((BUCKET_TYPE *)buckets);               \
-    }                                                                        \
-                                                                             \
-    static void ADAPTER##_array_destroy(                                     \
-        void *ctx,                                                           \
-        void *buckets,                                                       \
-        size_t capacity                                                      \
-    ) {                                                                      \
-        BUCKET_PREFIX##_array_destroy(                                       \
-            (CTX_TYPE *)ctx,                                                 \
-            (BUCKET_TYPE *)buckets,                                          \
-            capacity                                                         \
-        );                                                                   \
-    }                                                                        \
-                                                                             \
-    static ht_result ADAPTER##_insert(                                       \
-        void *ctx,                                                           \
-        void *buckets,                                                       \
-        size_t bucket_index,                                                 \
-        ht_key_t key,                                                        \
-        ht_val_t value,                                                      \
-        uint64_t *probe_len_out                                              \
-    ) {                                                                      \
-        return BUCKET_PREFIX##_insert(                                       \
-            (CTX_TYPE *)ctx,                                                 \
-            (BUCKET_TYPE *)buckets,                                          \
-            bucket_index,                                                    \
-            key,                                                             \
-            value,                                                           \
-            probe_len_out                                                    \
-        );                                                                   \
-    }                                                                        \
-                                                                             \
-    static ht_result ADAPTER##_get(                                          \
-        void *ctx,                                                           \
-        const void *buckets,                                                 \
-        size_t bucket_index,                                                 \
-        ht_key_t key,                                                        \
-        ht_val_t *value_out,                                                 \
-        uint64_t *probe_len_out                                              \
-    ) {                                                                      \
-        return BUCKET_PREFIX##_get(                                          \
-            (CTX_TYPE *)ctx,                                                 \
-            (const BUCKET_TYPE *)buckets,                                    \
-            bucket_index,                                                    \
-            key,                                                             \
-            value_out,                                                       \
-            probe_len_out                                                    \
-        );                                                                   \
-    }                                                                        \
-                                                                             \
-    static ht_result ADAPTER##_remove(                                       \
-        void *ctx,                                                           \
-        void *buckets,                                                       \
-        size_t bucket_index,                                                 \
-        ht_key_t key,                                                        \
-        uint64_t *probe_len_out                                              \
-    ) {                                                                      \
-        return BUCKET_PREFIX##_remove(                                       \
-            (CTX_TYPE *)ctx,                                                 \
-            (BUCKET_TYPE *)buckets,                                          \
-            bucket_index,                                                    \
-            key,                                                             \
-            probe_len_out                                                    \
-        );                                                                   \
-    }                                                                        \
-                                                                             \
-    static ht_result ADAPTER##_rehash_all(                                   \
-        void *ctx,                                                           \
-        void *old_buckets,                                                   \
-        size_t old_capacity,                                                 \
-        void *new_buckets,                                                   \
-        size_t new_capacity,                                                 \
-        ht_hash_fn hash_fn,                                                  \
-        uint64_t hash_seed                                                   \
-    ) {                                                                      \
-        return BUCKET_PREFIX##_rehash_all(                                   \
-            (CTX_TYPE *)ctx,                                                 \
-            (BUCKET_TYPE *)old_buckets,                                      \
-            old_capacity,                                                    \
-            (BUCKET_TYPE *)new_buckets,                                      \
-            new_capacity,                                                    \
-            hash_fn,                                                         \
-            hash_seed                                                        \
-        );                                                                   \
-    }                                                                        \
-                                                                             \
-    static size_t ADAPTER##_extra_bytes(                                     \
-        const void *ctx,                                                     \
-        const void *buckets,                                                 \
-        size_t capacity,                                                     \
-        size_t size                                                          \
-    ) {                                                                      \
-        return BUCKET_PREFIX##_extra_bytes(                                  \
-            (const CTX_TYPE *)ctx,                                           \
-            (const BUCKET_TYPE *)buckets,                                    \
-            capacity,                                                        \
-            size                                                             \
-        );                                                                   \
-    }
-
-/* DEFINE_BUCKET_ADAPTER generates the opaque bucket adapter functions for one
- * concrete bucket implementation: context lifecycle, array lifecycle, CRUD,
- * rehashing, and memory accounting. These adapters are the only place the
- * shared backend casts opaque storage back to concrete bucket types. */
-DEFINE_BUCKET_ADAPTER(
-    linked_bucket,
-    linkedlist_bucket,
-    linkedlist_bucket_ctx,
-    linkedlist_bucket
-)
-DEFINE_BUCKET_ADAPTER(
-    inline_bucket,
-    inline_array_bucket,
-    inline_array_bucket_ctx,
-    inline_array_bucket
-)
-DEFINE_BUCKET_ADAPTER(
-    segmented_bucket_adapter,
-    segmented_bucket,
-    segmented_bucket_ctx,
-    segmented_bucket
-)
-
-static const mod_separate_chaining_bucket_ops LINKED_BUCKET_OPS = {
-    .bucket_size = sizeof(linkedlist_bucket),
-    .ctx_create = linked_bucket_ctx_create,
-    .ctx_destroy = linked_bucket_ctx_destroy,
-    .array_alloc = linked_bucket_array_alloc,
-    .array_release = linked_bucket_array_release,
-    .array_destroy = linked_bucket_array_destroy,
-    .insert = linked_bucket_insert,
-    .get = linked_bucket_get,
-    .remove = linked_bucket_remove,
-    .rehash_all = linked_bucket_rehash_all,
-    .extra_bytes = linked_bucket_extra_bytes
-};
-
-static const mod_separate_chaining_bucket_ops INLINE_BUCKET_OPS = {
-    .bucket_size = sizeof(inline_array_bucket),
-    .ctx_create = inline_bucket_ctx_create,
-    .ctx_destroy = inline_bucket_ctx_destroy,
-    .array_alloc = inline_bucket_array_alloc,
-    .array_release = inline_bucket_array_release,
-    .array_destroy = inline_bucket_array_destroy,
-    .insert = inline_bucket_insert,
-    .get = inline_bucket_get,
-    .remove = inline_bucket_remove,
-    .rehash_all = inline_bucket_rehash_all,
-    .extra_bytes = inline_bucket_extra_bytes
-};
-
-static const mod_separate_chaining_bucket_ops SEGMENTED_BUCKET_OPS = {
-    .bucket_size = sizeof(segmented_bucket),
-    .ctx_create = segmented_bucket_adapter_ctx_create,
-    .ctx_destroy = segmented_bucket_adapter_ctx_destroy,
-    .array_alloc = segmented_bucket_adapter_array_alloc,
-    .array_release = segmented_bucket_adapter_array_release,
-    .array_destroy = segmented_bucket_adapter_array_destroy,
-    .insert = segmented_bucket_adapter_insert,
-    .get = segmented_bucket_adapter_get,
-    .remove = segmented_bucket_adapter_remove,
-    .rehash_all = segmented_bucket_adapter_rehash_all,
-    .extra_bytes = segmented_bucket_adapter_extra_bytes
-};
-
 static const mod_separate_chaining_bucket_ops *
 mod_separate_chaining_bucket_ops_for_impl(
     ht_impl impl_kind
 ) {
     switch (impl_kind) {
     case HT_IMPL_BUCKET_MOD_SEPARATE_CHAINING:
-        return &INLINE_BUCKET_OPS;
+        return &inline_array_bucket_ops;
 
     case HT_IMPL_LINKED_MOD_SEPARATE_CHAINING:
-        return &LINKED_BUCKET_OPS;
+        return &linkedlist_bucket_ops;
 
     case HT_IMPL_SEGMENTED_MOD_SEPARATE_CHAINING:
-        return &SEGMENTED_BUCKET_OPS;
+        return &segmented_bucket_ops;
 
     default:
         return NULL;
@@ -487,8 +255,8 @@ ht_result mod_separate_chaining_create_impl_ex(
 ) {
     mod_separate_chaining_table *t;
     const mod_separate_chaining_bucket_ops *bucket_ops;
-    size_t capacity;
-    size_t min_capacity;
+    ht_backend_config resolved;
+    ht_result rc;
 
     if (out == NULL) {
         return HT_ERR_INVALID;
@@ -504,6 +272,18 @@ ht_result mod_separate_chaining_create_impl_ex(
         return HT_ERR_UNSUPPORTED;
     }
 
+    rc = ht_backend_config_resolve(
+        cfg,
+        DEFAULT_INITIAL_CAPACITY,
+        DEFAULT_MIN_CAPACITY,
+        DEFAULT_MAX_LOAD,
+        DEFAULT_MIN_LOAD,
+        &resolved
+    );
+    if (rc != HT_OK) {
+        return rc;
+    }
+
     t = calloc(1, sizeof(*t));
     if (t == NULL) {
         return HT_ERR_OOM;
@@ -516,50 +296,22 @@ ht_result mod_separate_chaining_create_impl_ex(
         return HT_ERR_OOM;
     }
 
-    capacity = (cfg->init_capacity > 0)
-        ? cfg->init_capacity
-        : DEFAULT_INITIAL_CAPACITY;
-    capacity = next_pow2(capacity);
-
-    min_capacity = (cfg->min_capacity > 0)
-        ? cfg->min_capacity
-        : DEFAULT_MIN_CAPACITY;
-    min_capacity = next_pow2(min_capacity);
-
-    if (capacity == 0 || min_capacity == 0) {
-        t->bucket_ops->ctx_destroy(t->bucket_ctx);
-        free(t);
-        return HT_ERR_INVALID;
-    }
-
-    if (capacity < min_capacity) {
-        capacity = min_capacity;
-    }
-
-    t->buckets = t->bucket_ops->array_alloc(capacity);
+    t->buckets = t->bucket_ops->array_alloc(resolved.capacity);
     if (t->buckets == NULL) {
         t->bucket_ops->ctx_destroy(t->bucket_ctx);
         free(t);
         return HT_ERR_OOM;
     }
 
-    t->capacity     = capacity;
-    t->min_capacity = min_capacity;
+    t->capacity     = resolved.capacity;
+    t->min_capacity = resolved.min_capacity;
     t->size         = 0;
-
-    t->max_load_factor = (cfg->max_load_factor > 0.0)
-        ? cfg->max_load_factor
-        : DEFAULT_MAX_LOAD;
-    t->min_load_factor = (cfg->min_load_factor > 0.0)
-        ? cfg->min_load_factor
-        : DEFAULT_MIN_LOAD;
-
-    t->resize_mode   = cfg->rsz_mode;
-    t->hash_fn       = (cfg->hash_fn != NULL)
-        ? cfg->hash_fn
-        : default_hash;
-    t->hash_seed     = cfg->hash_seed;
-    t->collect_stats = cfg->collect_stats;
+    t->max_load_factor = resolved.max_load_factor;
+    t->min_load_factor = resolved.min_load_factor;
+    t->resize_mode   = resolved.resize_mode;
+    t->hash_fn       = resolved.hash_fn;
+    t->hash_seed     = resolved.hash_seed;
+    t->collect_stats = resolved.collect_stats;
 
     mod_separate_chaining_update_bytes_used(t);
     ht_resize_stats_init(&t->stats, t->collect_stats, t->capacity);
@@ -661,13 +413,13 @@ static ht_result mod_separate_chaining_insert_impl(
         return HT_ERR_FULL;
     }
 
-    rc = t->bucket_ops->insert(
+    rc = t->bucket_ops->insert_absent(
         t->bucket_ctx,
         t->buckets,
         bucket,
         key,
         value,
-        &probe_len
+        NULL
     );
     if (rc != HT_OK) {
         HT_RECORD_INSERT_FAILURE(t);
@@ -811,16 +563,23 @@ static ht_result mod_separate_chaining_reserve_impl(
     size_t capacity
 ) {
     mod_separate_chaining_table *t = impl;
+    size_t target;
+    ht_result rc;
 
     if (t == NULL) {
         return HT_ERR_INVALID;
     }
 
-    if (capacity <= t->capacity) {
+    rc = ht_reserve_target(t->capacity, capacity, &target);
+    if (rc != HT_OK) {
+        return rc;
+    }
+
+    if (target == t->capacity) {
         return HT_OK;
     }
 
-    return mod_separate_chaining_resize(t, next_pow2(capacity));
+    return mod_separate_chaining_resize(t, target);
 }
 
 static ht_result mod_separate_chaining_rehash_impl(
@@ -829,18 +588,18 @@ static ht_result mod_separate_chaining_rehash_impl(
 ) {
     mod_separate_chaining_table *t = impl;
     size_t target;
+    ht_result rc;
 
     if (t == NULL) {
         return HT_ERR_INVALID;
     }
 
-    target = (capacity > t->size) ? capacity : t->size;
-
-    if (target < t->min_capacity) {
-        target = t->min_capacity;
+    rc = ht_rehash_target(t->size, t->min_capacity, capacity, &target);
+    if (rc != HT_OK) {
+        return rc;
     }
 
-    return mod_separate_chaining_resize(t, next_pow2(target));
+    return mod_separate_chaining_resize(t, target);
 }
 
 static ht_result mod_separate_chaining_get_stats_impl(
@@ -886,7 +645,7 @@ static void mod_separate_chaining_update_bytes_used(
         return;
     }
 
-    bytes = ht_bytes_used_snapshot(
+    bytes = ht_bytes_add_array_or_max(
         sizeof(*t),
         t->capacity,
         t->bucket_ops->bucket_size
@@ -926,7 +685,10 @@ static ht_result mod_separate_chaining_resize(
         new_capacity = t->min_capacity;
     }
 
-    new_capacity = next_pow2(new_capacity);
+    rc = ht_checked_next_pow2(new_capacity, &new_capacity);
+    if (rc != HT_OK) {
+        return rc;
+    }
 
     if (new_capacity == t->capacity) {
         return HT_OK;

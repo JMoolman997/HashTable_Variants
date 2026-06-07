@@ -14,7 +14,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "backend_util.h"
+#include "backend_config.h"
+#include "capacity_util.h"
+#include "hash_util.h"
+#include "memory_util.h"
+#include "resize_stats.h"
+#include "stats_util.h"
 #include "ht_internal.h"
 #include "metadata_impl.h"
 
@@ -69,8 +74,8 @@ static const struct ht_vtable METADATA_VTABLE = {
 
 ht_result metadata_create_impl_ex(const ht_config *cfg, void **out) {
   metadata_table *t;
-  size_t capacity;
-  size_t min_capacity;
+  ht_backend_config resolved;
+  ht_result rc;
 
   if (out == NULL) {
     return HT_ERR_INVALID;
@@ -81,54 +86,42 @@ ht_result metadata_create_impl_ex(const ht_config *cfg, void **out) {
     return HT_ERR_INVALID;
   }
 
+  rc = ht_backend_config_resolve(
+      cfg, DEFAULT_INITIAL_CAPACITY, DEFAULT_MIN_CAPACITY, DEFAULT_MAX_LOAD,
+      DEFAULT_MIN_LOAD, &resolved);
+  if (rc != HT_OK) {
+    return rc;
+  }
+
   t = calloc(1, sizeof(*t));
   if (t == NULL) {
     return HT_ERR_OOM;
   }
 
-  capacity =
-      (cfg->init_capacity > 0) ? cfg->init_capacity : DEFAULT_INITIAL_CAPACITY;
-  capacity = next_pow2(capacity);
-
-  min_capacity =
-      (cfg->min_capacity > 0) ? cfg->min_capacity : DEFAULT_MIN_CAPACITY;
-  min_capacity = next_pow2(min_capacity);
-
-  if (capacity == 0 || min_capacity == 0) {
-    free(t);
-    return HT_ERR_INVALID;
-  }
-
-  if (capacity < min_capacity) {
-    capacity = min_capacity;
-  }
-
-  t->ctrl = malloc(capacity);
+  t->ctrl = malloc(resolved.capacity);
   if (t->ctrl == NULL) {
     free(t);
     return HT_ERR_OOM;
   }
-  memset(t->ctrl, METADATA_EMPTY, capacity);
+  memset(t->ctrl, METADATA_EMPTY, resolved.capacity);
 
-  t->data = calloc(capacity, sizeof(*t->data));
+  t->data = calloc(resolved.capacity, sizeof(*t->data));
   if (t->data == NULL) {
     free(t->ctrl);
     free(t);
     return HT_ERR_OOM;
   }
 
-  t->capacity = capacity;
-  t->min_capacity = min_capacity;
+  t->capacity = resolved.capacity;
+  t->min_capacity = resolved.min_capacity;
   t->size = 0;
   t->used = 0;
-  t->max_load_factor =
-      (cfg->max_load_factor > 0.0) ? cfg->max_load_factor : DEFAULT_MAX_LOAD;
-  t->min_load_factor =
-      (cfg->min_load_factor > 0.0) ? cfg->min_load_factor : DEFAULT_MIN_LOAD;
-  t->resize_mode = cfg->rsz_mode;
-  t->hash_fn = (cfg->hash_fn != NULL) ? cfg->hash_fn : default_hash;
-  t->hash_seed = cfg->hash_seed;
-  t->collect_stats = cfg->collect_stats;
+  t->max_load_factor = resolved.max_load_factor;
+  t->min_load_factor = resolved.min_load_factor;
+  t->resize_mode = resolved.resize_mode;
+  t->hash_fn = resolved.hash_fn;
+  t->hash_seed = resolved.hash_seed;
+  t->collect_stats = resolved.collect_stats;
 
   metadata_update_bytes_used(t);
   ht_resize_stats_init(&t->stats, t->collect_stats, t->capacity);
@@ -323,29 +316,33 @@ static double metadata_load_factor_impl(const void *impl) {
 
 static ht_result metadata_reserve_impl(void *impl, size_t capacity) {
   metadata_table *t = impl;
+  size_t target;
+  ht_result rc;
 
   if (t == NULL) {
     return HT_ERR_INVALID;
   }
-  if (capacity <= t->capacity) {
-    return HT_OK;
+  rc = ht_reserve_target(t->capacity, capacity, &target);
+  if (rc != HT_OK || target == t->capacity) {
+    return rc;
   }
-  return metadata_resize(t, next_pow2(capacity));
+  return metadata_resize(t, target);
 }
 
 static ht_result metadata_rehash_impl(void *impl, size_t capacity) {
   metadata_table *t = impl;
   size_t target;
+  ht_result rc;
 
   if (t == NULL) {
     return HT_ERR_INVALID;
   }
 
-  target = (capacity > t->size) ? capacity : t->size;
-  if (target < t->min_capacity) {
-    target = t->min_capacity;
+  rc = ht_rehash_target(t->size, t->min_capacity, capacity, &target);
+  if (rc != HT_OK) {
+    return rc;
   }
-  return metadata_resize(t, next_pow2(target));
+  return metadata_resize(t, target);
 }
 
 static ht_result metadata_get_stats_impl(const void *impl, ht_stats *out) {
@@ -376,8 +373,10 @@ static ht_result metadata_reset_stats_impl(void *impl) {
 
 static void metadata_update_bytes_used(metadata_table *t) {
   if (t != NULL && t->collect_stats) {
-    t->stats.bytes_used = ht_bytes_used_snapshot(
-        sizeof(*t), t->capacity, sizeof(uint8_t) + sizeof(metadata_data_slot));
+    size_t bytes = sizeof(*t);
+    bytes = ht_bytes_add_array_or_max(bytes, t->capacity, sizeof(*t->ctrl));
+    bytes = ht_bytes_add_array_or_max(bytes, t->capacity, sizeof(*t->data));
+    t->stats.bytes_used = bytes;
   }
 }
 
@@ -389,9 +388,15 @@ static ht_result metadata_resize(metadata_table *t, size_t new_capacity) {
   uint64_t start_ns = ht_resize_instrumentation_start(t->collect_stats);
   uint8_t *new_ctrl;
   metadata_data_slot *new_data;
+  ht_result rc;
 
-  new_capacity = next_pow2((new_capacity < t->min_capacity) ? t->min_capacity
-                                                            : new_capacity);
+  if (new_capacity < t->min_capacity) {
+    new_capacity = t->min_capacity;
+  }
+  rc = ht_checked_next_pow2(new_capacity, &new_capacity);
+  if (rc != HT_OK) {
+    return rc;
+  }
   if (new_capacity == t->capacity) {
     return HT_OK;
   }

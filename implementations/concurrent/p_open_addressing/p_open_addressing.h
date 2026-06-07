@@ -20,6 +20,9 @@
  * This header is internal to the backend/core build. It exposes the private
  * representation so tests, diagnostics, and future backend helpers have one
  * documented source of truth for the concurrent layout.
+ *
+ * @author  J.W. Moolman
+ * @date    2026-06-07
  */
 
 #ifndef P_OPEN_ADDRESSING_H

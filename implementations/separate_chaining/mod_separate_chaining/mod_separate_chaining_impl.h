@@ -25,8 +25,59 @@
 #include "ht_types.h"
 
 struct ht_vtable;
-typedef struct mod_separate_chaining_bucket_ops
-    mod_separate_chaining_bucket_ops;
+
+typedef struct mod_separate_chaining_bucket_ops {
+    size_t bucket_size;
+
+    void *(*ctx_create)(void);
+    void (*ctx_destroy)(void *ctx);
+    void *(*array_alloc)(size_t capacity);
+    void (*array_release)(void *buckets);
+    void (*array_destroy)(void *ctx, void *buckets, size_t capacity);
+
+    ht_result (*insert_absent)(
+        void *ctx,
+        void *buckets,
+        size_t bucket_index,
+        ht_key_t key,
+        ht_val_t value,
+        uint64_t *probe_len_out
+    );
+
+    ht_result (*get)(
+        void *ctx,
+        const void *buckets,
+        size_t bucket_index,
+        ht_key_t key,
+        ht_val_t *value_out,
+        uint64_t *probe_len_out
+    );
+
+    ht_result (*remove)(
+        void *ctx,
+        void *buckets,
+        size_t bucket_index,
+        ht_key_t key,
+        uint64_t *probe_len_out
+    );
+
+    ht_result (*rehash_all)(
+        void *ctx,
+        void *old_buckets,
+        size_t old_capacity,
+        void *new_buckets,
+        size_t new_capacity,
+        ht_hash_fn hash_fn,
+        uint64_t hash_seed
+    );
+
+    size_t (*extra_bytes)(
+        const void *ctx,
+        const void *buckets,
+        size_t capacity,
+        size_t size
+    );
+} mod_separate_chaining_bucket_ops;
 
 /**
  * @brief Private state for the modified separate-chaining backend core.

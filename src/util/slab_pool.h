@@ -26,11 +26,6 @@ typedef struct slab_pool {
     size_t slot_size; /**< Aligned size of each slot. */
     size_t objects_per_block; /**< Slots allocated per new block. */
     size_t bytes_owned; /**< Total bytes owned by all blocks. */
-    size_t block_count; /**< Number of allocated blocks. */
-    size_t alloc_count; /**< Total allocation calls served. */
-    size_t free_count; /**< Total frees returned to the pool. */
-    size_t live_count; /**< Currently checked-out slots. */
-    size_t high_watermark; /**< Largest observed `live_count`. */
     size_t free_slot_count; /**< Current number of available slots. */
 } slab_pool;
 
@@ -94,17 +89,6 @@ void slab_pool_free(
 );
 
 /**
- * @brief Return the number of currently available slots.
- *
- * @param pool Pool to inspect.
- *
- * @return Free slot count, or `0` for `NULL`.
- */
-size_t slab_pool_available(
-    const slab_pool *pool
-);
-
-/**
  * @brief Ensure at least object_count slots are available.
  *
  * @param pool Pool to grow.
@@ -125,41 +109,6 @@ int slab_pool_reserve(
  * @return Bytes currently owned by the pool, or `0` for `NULL`.
  */
 size_t slab_pool_bytes_owned(
-    const slab_pool *pool
-);
-
-/**
- * @brief Return the number of slab blocks owned by the pool.
- */
-size_t slab_pool_block_count(
-    const slab_pool *pool
-);
-
-/**
- * @brief Return the total number of slots handed out by the pool.
- */
-size_t slab_pool_alloc_count(
-    const slab_pool *pool
-);
-
-/**
- * @brief Return the total number of slots returned to the pool.
- */
-size_t slab_pool_free_count(
-    const slab_pool *pool
-);
-
-/**
- * @brief Return the number of slots currently checked out.
- */
-size_t slab_pool_live_count(
-    const slab_pool *pool
-);
-
-/**
- * @brief Return the maximum simultaneous live slot count observed.
- */
-size_t slab_pool_high_watermark(
     const slab_pool *pool
 );
 

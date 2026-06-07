@@ -4,8 +4,15 @@
  */
 
 #include <stdio.h>
+#include <stdint.h>
+#include <string.h>
 
+#include "backshift_impl.h"
+#include "backend_config.h"
+#include "capacity_util.h"
 #include "hash_func.h"
+#include "ht_registry.h"
+#include "memory_util.h"
 #include "test_registry.h"
 #include "test_runner.h"
 
@@ -26,6 +33,7 @@ int test_config_helpers(ht_impl impl, const char *impl_name);
 int test_create_ex_diagnostics(ht_impl impl, const char *impl_name);
 int test_contains_helper(ht_impl impl, const char *impl_name);
 int test_name_helpers(ht_impl impl, const char *impl_name);
+int test_mod_chaining_duplicate_no_resize(ht_impl impl, const char *impl_name);
 int test_full_table_no_resize(ht_impl impl, const char *impl_name);
 int test_reuse_deleted_slot_no_resize(ht_impl impl, const char *impl_name);
 int test_resize_grow_integrity(ht_impl impl, const char *impl_name);
@@ -33,6 +41,7 @@ int test_resize_shrink_integrity(ht_impl impl, const char *impl_name);
 int test_collision_heavy_case(ht_impl impl, const char *impl_name);
 
 static int test_hash_helpers(void);
+static int test_internal_helpers(void);
 
 static const test_case TEST_CASES[] = {
     { "create_destroy", test_create_destroy },
@@ -52,6 +61,7 @@ static const test_case TEST_CASES[] = {
     { "create_ex_diagnostics", test_create_ex_diagnostics },
     { "contains_helper", test_contains_helper },
     { "name_helpers", test_name_helpers },
+    { "mod_chaining_duplicate_no_resize", test_mod_chaining_duplicate_no_resize },
     { "full_table_no_resize", test_full_table_no_resize },
     { "reuse_deleted_slot_no_resize", test_reuse_deleted_slot_no_resize },
     { "resize_grow_integrity", test_resize_grow_integrity },
@@ -66,6 +76,9 @@ int main(
     size_t                impl_count;
 
     if (test_hash_helpers() != 0) {
+        return 1;
+    }
+    if (test_internal_helpers() != 0) {
         return 1;
     }
 
@@ -96,6 +109,87 @@ static int test_hash_helpers(
     if (crc32_hash(crc_input, 9) != 0xCBF43926U) {
         fprintf(stderr, "[FAIL] crc32 123456789 vector\n");
         return -1;
+    }
+
+    return 0;
+}
+
+static int test_internal_helpers(
+    void
+) {
+    ht_backend_config resolved;
+    ht_config cfg;
+    ht_result rc;
+    ht_map *map;
+    const ht_registry_entry *entries;
+    size_t count;
+    size_t out;
+    size_t i;
+
+    cfg = ht_config_default(HT_IMPL_OPEN_ADDRESSING);
+    rc = ht_backend_config_resolve(&cfg, 16, 8, 0.75, 0.20, &resolved);
+    if (rc != HT_OK || resolved.capacity != 16 || resolved.min_capacity != 8 ||
+        resolved.max_load_factor != 0.75 || resolved.min_load_factor != 0.20 ||
+        resolved.resize_mode != HT_RESIZE_GROW || resolved.hash_fn == NULL ||
+        resolved.thread_count != 1 || resolved.collect_stats != 0) {
+        fprintf(stderr, "[FAIL] backend config default resolution\n");
+        return -1;
+    }
+
+    cfg = ht_config_fixed(HT_IMPL_OPEN_ADDRESSING, 17);
+    rc = ht_backend_config_resolve(&cfg, 16, 8, 0.75, 0.20, &resolved);
+    if (rc != HT_OK || resolved.capacity != 32 ||
+        resolved.min_capacity != 32 || resolved.resize_mode != HT_RESIZE_NONE) {
+        fprintf(stderr, "[FAIL] backend config fixed resolution\n");
+        return -1;
+    }
+
+    cfg.init_capacity = SIZE_MAX;
+    if (ht_backend_config_resolve(&cfg, 16, 8, 0.75, 0.20, &resolved) == HT_OK ||
+        ht_backend_config_resolve(NULL, 16, 8, 0.75, 0.20, &resolved) !=
+            HT_ERR_INVALID) {
+        fprintf(stderr, "[FAIL] backend config invalid handling\n");
+        return -1;
+    }
+
+    if (ht_checked_add_size(SIZE_MAX, 1, &out) != HT_ERR_OOM ||
+        ht_checked_mul_size(SIZE_MAX, 2, &out) != HT_ERR_OOM ||
+        ht_control_bytes_for_group(16, 16, 15, &out) != HT_OK || out != 31 ||
+        ht_control_bytes_for_group(SIZE_MAX, 16, 15, &out) != HT_ERR_OOM) {
+        fprintf(stderr, "[FAIL] memory helper overflow handling\n");
+        return -1;
+    }
+
+    if (!backshift_can_move(0, 2, 3, 7) ||
+        !backshift_can_move(6, 1, 2, 7) ||
+        backshift_can_move(2, 1, 3, 7)) {
+        fprintf(stderr, "[FAIL] backshift movement helper\n");
+        return -1;
+    }
+
+    entries = ht_registry_entries(&count);
+    if (entries == NULL || count == 0 ||
+        ht_registry_find((ht_impl)9999) != NULL ||
+        ht_registry_impl_is_known((ht_impl)9999) != 0) {
+        fprintf(stderr, "[FAIL] registry basic lookup\n");
+        return -1;
+    }
+
+    for (i = 0; i < count; i++) {
+        if (strcmp(ht_impl_name(entries[i].impl), entries[i].name) != 0) {
+            fprintf(stderr, "[FAIL] registry name mismatch for %s\n", entries[i].name);
+            return -1;
+        }
+
+        cfg = ht_config_fixed(entries[i].impl, 32);
+        map = NULL;
+        rc = ht_create_ex(&cfg, &map);
+        if (rc != HT_OK || map == NULL) {
+            fprintf(stderr, "[FAIL] registry create path for %s\n", entries[i].name);
+            ht_destroy(map);
+            return -1;
+        }
+        ht_destroy(map);
     }
 
     return 0;

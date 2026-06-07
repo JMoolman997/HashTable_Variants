@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "ht.h"
+#include "ht_registry.h"
 #include "bench_names.h"
 
 #define BENCH_ARRAY_LEN(array) (sizeof(array) / sizeof((array)[0]))
@@ -34,26 +35,6 @@ static const bench_name_map bench_kind_maps[] = {
     {"resize-workload", BENCH_RESIZE_WORKLOAD},
     {"concurrent-lookup", BENCH_CONCURRENT_LOOKUP},
     {"concurrent-workload", BENCH_CONCURRENT_WORKLOAD},
-};
-
-static const bench_name_map bench_impl_maps[] = {
-    {"open_addressing", HT_IMPL_OPEN_ADDRESSING},
-    {"robin_hood", HT_IMPL_ROBIN_HOOD},
-    {"separate_chaining", HT_IMPL_SEPARATE_CHAINING},
-    {"hopscotch", HT_IMPL_HOPSCOTCH},
-    {"adv_open_addressing", HT_IMPL_ADV_OPEN_ADDRESSING},
-    {"p_open_addressing", HT_IMPL_P_OPEN_ADDRESSING},
-    {"backshift", HT_IMPL_BACKSHIFT},
-    {"metadata", HT_IMPL_METADATA},
-    {"simd", HT_IMPL_SIMD},
-    {"bucket_mod_separate_chaining", HT_IMPL_BUCKET_MOD_SEPARATE_CHAINING},
-    {"linked_mod_separate_chaining", HT_IMPL_LINKED_MOD_SEPARATE_CHAINING},
-    {"segmented_mod_separate_chaining", HT_IMPL_SEGMENTED_MOD_SEPARATE_CHAINING},
-    {"p_separate_chaining", HT_IMPL_P_SEPARATE_CHAINING},
-    {"fingerprint", HT_IMPL_FINGERPRINT},
-    {"linear_hashing", HT_IMPL_LINEAR_HASHING},
-    {"adv_separate_chaining", HT_IMPL_ADV_SEPARATE_CHAINING},
-    {"lf_hopscotch", HT_IMPL_LF_HOPSCOTCH},
 };
 
 static const bench_name_map bench_workload_maps[] = {
@@ -148,15 +129,7 @@ const char *bench_impl_name(
 int bench_impl_is_known(
     ht_impl impl
 ) {
-    size_t i;
-
-    for (i = 0; i < BENCH_ARRAY_LEN(bench_impl_maps); i++) {
-        if (bench_impl_maps[i].value == (int)impl) {
-            return 1;
-        }
-    }
-
-    return 0;
+    return ht_registry_impl_is_known(impl);
 }
 
 const char *bench_workload_name(
@@ -226,23 +199,23 @@ int bench_parse_impl(
     const char *text,
     ht_impl *out
 ) {
-    int value;
+    const ht_registry_entry *entries;
+    size_t count;
+    size_t i;
 
     if (text == NULL || out == NULL) {
         return -1;
     }
 
-    if (bench_lookup_name_map(
-            text,
-            bench_impl_maps,
-            BENCH_ARRAY_LEN(bench_impl_maps),
-            &value
-        ) != 0) {
-        return -1;
+    entries = ht_registry_entries(&count);
+    for (i = 0; i < count; i++) {
+        if (strcmp(text, entries[i].name) == 0) {
+            *out = entries[i].impl;
+            return 0;
+        }
     }
 
-    *out = (ht_impl)value;
-    return 0;
+    return -1;
 }
 
 int bench_parse_workload(

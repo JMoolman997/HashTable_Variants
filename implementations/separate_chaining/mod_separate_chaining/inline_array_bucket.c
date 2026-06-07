@@ -14,7 +14,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "backend_util.h"
+#include "backend_config.h"
+#include "capacity_util.h"
+#include "hash_util.h"
+#include "memory_util.h"
+#include "resize_stats.h"
+#include "stats_util.h"
 #include "inline_array_bucket.h"
 #include "slab_pool.h"
 
@@ -58,7 +63,7 @@ static void inline_array_bucket_destroy_overflow_chain(
     inline_array_bucket *bucket
 );
 
-inline_array_bucket_ctx *inline_array_bucket_ctx_create(
+static void *inline_array_bucket_ctx_create(
     void
 ) {
     inline_array_bucket_ctx *ctx;
@@ -80,9 +85,11 @@ inline_array_bucket_ctx *inline_array_bucket_ctx_create(
     return ctx;
 }
 
-void inline_array_bucket_ctx_destroy(
-    inline_array_bucket_ctx *ctx
+static void inline_array_bucket_ctx_destroy(
+    void *ctx_in
 ) {
+    inline_array_bucket_ctx *ctx = ctx_in;
+
     if (ctx == NULL) {
         return;
     }
@@ -91,23 +98,25 @@ void inline_array_bucket_ctx_destroy(
     free(ctx);
 }
 
-inline_array_bucket *inline_array_bucket_array_alloc(
+static void *inline_array_bucket_array_alloc(
     size_t capacity
 ) {
     return calloc(capacity, sizeof(inline_array_bucket));
 }
 
-void inline_array_bucket_array_release(
-    inline_array_bucket *buckets
+static void inline_array_bucket_array_release(
+    void *buckets
 ) {
     free(buckets);
 }
 
-void inline_array_bucket_array_destroy(
-    inline_array_bucket_ctx *ctx,
-    inline_array_bucket *buckets,
+static void inline_array_bucket_array_destroy(
+    void *ctx_in,
+    void *buckets_in,
     size_t capacity
 ) {
+    inline_array_bucket_ctx *ctx = ctx_in;
+    inline_array_bucket *buckets = buckets_in;
     size_t i;
 
     if (ctx == NULL || buckets == NULL) {
@@ -123,14 +132,16 @@ void inline_array_bucket_array_destroy(
     free(buckets);
 }
 
-ht_result inline_array_bucket_insert(
-    inline_array_bucket_ctx *ctx,
-    inline_array_bucket *buckets,
+static ht_result inline_array_bucket_insert_absent(
+    void *ctx_in,
+    void *buckets_in,
     size_t bucket_index,
     ht_key_t key,
     ht_val_t value,
     uint64_t *probe_len_out
 ) {
+    inline_array_bucket_ctx *ctx = ctx_in;
+    inline_array_bucket *buckets = buckets_in;
     inline_array_bucket *bucket;
     inline_array_bucket *tail;
     uint64_t probe_len = 1;
@@ -143,19 +154,8 @@ ht_result inline_array_bucket_insert(
     tail = bucket;
 
     while (bucket != NULL) {
-        uint8_t i;
-
-        for (i = 0; i < bucket->used; i++) {
-            if (bucket->keys[i] == key) {
-                if (probe_len_out != NULL) {
-                    *probe_len_out = probe_len;
-                }
-                return HT_ERR_EXISTS;
-            }
-            probe_len++;
-        }
-
         if (bucket->used < INLINE_BUCKET_CAPACITY) {
+            probe_len += bucket->used;
             bucket->keys[bucket->used] = key;
             bucket->values[bucket->used] = value;
             bucket->used++;
@@ -165,6 +165,7 @@ ht_result inline_array_bucket_insert(
             return HT_OK;
         }
 
+        probe_len += bucket->used;
         tail = bucket;
         bucket = bucket->next;
     }
@@ -189,14 +190,15 @@ ht_result inline_array_bucket_insert(
     return HT_OK;
 }
 
-ht_result inline_array_bucket_get(
-    inline_array_bucket_ctx *ctx,
-    const inline_array_bucket *buckets,
+static ht_result inline_array_bucket_get(
+    void *ctx,
+    const void *buckets_in,
     size_t bucket_index,
     ht_key_t key,
     ht_val_t *value_out,
     uint64_t *probe_len_out
 ) {
+    const inline_array_bucket *buckets = buckets_in;
     const inline_array_bucket *bucket;
     uint64_t probe_len = 1;
 
@@ -230,13 +232,15 @@ ht_result inline_array_bucket_get(
     return HT_ERR_NOT_FOUND;
 }
 
-ht_result inline_array_bucket_remove(
-    inline_array_bucket_ctx *ctx,
-    inline_array_bucket *buckets,
+static ht_result inline_array_bucket_remove(
+    void *ctx_in,
+    void *buckets_in,
     size_t bucket_index,
     ht_key_t key,
     uint64_t *probe_len_out
 ) {
+    inline_array_bucket_ctx *ctx = ctx_in;
+    inline_array_bucket *buckets = buckets_in;
     inline_array_bucket *bucket;
     inline_array_bucket *prev = NULL;
     uint64_t probe_len = 1;
@@ -288,15 +292,17 @@ ht_result inline_array_bucket_remove(
     return HT_ERR_NOT_FOUND;
 }
 
-ht_result inline_array_bucket_rehash_all(
-    inline_array_bucket_ctx *ctx,
-    inline_array_bucket *old_buckets,
+static ht_result inline_array_bucket_rehash_all(
+    void *ctx,
+    void *old_buckets_in,
     size_t old_capacity,
-    inline_array_bucket *new_buckets,
+    void *new_buckets_in,
     size_t new_capacity,
     ht_hash_fn hash_fn,
     uint64_t hash_seed
 ) {
+    inline_array_bucket *old_buckets = old_buckets_in;
+    inline_array_bucket *new_buckets = new_buckets_in;
     size_t i;
 
     if (ctx == NULL || old_buckets == NULL || new_buckets == NULL ||
@@ -317,7 +323,7 @@ ht_result inline_array_bucket_rehash_all(
                     hash_fn(bucket->keys[j], hash_seed),
                     new_capacity
                 );
-                ht_result rc = inline_array_bucket_insert(
+                ht_result rc = inline_array_bucket_insert_absent(
                     ctx,
                     new_buckets,
                     bucket_index,
@@ -344,12 +350,14 @@ ht_result inline_array_bucket_rehash_all(
     return HT_OK;
 }
 
-size_t inline_array_bucket_extra_bytes(
-    const inline_array_bucket_ctx *ctx,
-    const inline_array_bucket *buckets,
+static size_t inline_array_bucket_extra_bytes(
+    const void *ctx_in,
+    const void *buckets,
     size_t capacity,
     size_t size
 ) {
+    const inline_array_bucket_ctx *ctx = ctx_in;
+
     (void)buckets;
     (void)capacity;
     (void)size;
@@ -360,6 +368,20 @@ size_t inline_array_bucket_extra_bytes(
 
     return sizeof(*ctx) + slab_pool_bytes_owned(&ctx->pool);
 }
+
+const mod_separate_chaining_bucket_ops inline_array_bucket_ops = {
+    .bucket_size = sizeof(inline_array_bucket),
+    .ctx_create = inline_array_bucket_ctx_create,
+    .ctx_destroy = inline_array_bucket_ctx_destroy,
+    .array_alloc = inline_array_bucket_array_alloc,
+    .array_release = inline_array_bucket_array_release,
+    .array_destroy = inline_array_bucket_array_destroy,
+    .insert_absent = inline_array_bucket_insert_absent,
+    .get = inline_array_bucket_get,
+    .remove = inline_array_bucket_remove,
+    .rehash_all = inline_array_bucket_rehash_all,
+    .extra_bytes = inline_array_bucket_extra_bytes
+};
 
 static inline_array_bucket *inline_array_bucket_overflow_alloc(
     inline_array_bucket_ctx *ctx

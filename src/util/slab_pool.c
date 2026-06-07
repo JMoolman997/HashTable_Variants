@@ -80,11 +80,6 @@ int slab_pool_init(
         ? objects_per_block
         : SLAB_POOL_DEFAULT_OBJECTS_PER_BLOCK;
     pool->bytes_owned = 0;
-    pool->block_count = 0;
-    pool->alloc_count = 0;
-    pool->free_count = 0;
-    pool->live_count = 0;
-    pool->high_watermark = 0;
     pool->free_slot_count = 0;
 
     return 0;
@@ -109,11 +104,6 @@ void slab_pool_reset(
     pool->blocks = NULL;
     pool->free_list = NULL;
     pool->bytes_owned = 0;
-    pool->block_count = 0;
-    pool->alloc_count = 0;
-    pool->free_count = 0;
-    pool->live_count = 0;
-    pool->high_watermark = 0;
     pool->free_slot_count = 0;
 }
 
@@ -141,11 +131,6 @@ void *slab_pool_alloc(
     if (pool->free_slot_count > 0) {
         pool->free_slot_count--;
     }
-    pool->alloc_count++;
-    pool->live_count++;
-    if (pool->live_count > pool->high_watermark) {
-        pool->high_watermark = pool->live_count;
-    }
     return slot;
 }
 
@@ -163,19 +148,6 @@ void slab_pool_free(
     slot->next = pool->free_list;
     pool->free_list = slot;
     pool->free_slot_count++;
-    pool->free_count++;
-    if (pool->live_count > 0) {
-        pool->live_count--;
-    }
-}
-
-size_t slab_pool_available(
-    const slab_pool *pool
-) {
-    return (pool != NULL)
-        ? pool->free_slot_count
-        : 0
-    ;
 }
 
 int slab_pool_reserve(
@@ -200,51 +172,6 @@ size_t slab_pool_bytes_owned(
 ) {
     return (pool != NULL)
         ? pool->bytes_owned
-        : 0
-    ;
-}
-
-size_t slab_pool_block_count(
-    const slab_pool *pool
-) {
-    return (pool != NULL)
-        ? pool->block_count
-        : 0
-    ;
-}
-
-size_t slab_pool_alloc_count(
-    const slab_pool *pool
-) {
-    return (pool != NULL)
-        ? pool->alloc_count
-        : 0
-    ;
-}
-
-size_t slab_pool_free_count(
-    const slab_pool *pool
-) {
-    return (pool != NULL)
-        ? pool->free_count
-        : 0
-    ;
-}
-
-size_t slab_pool_live_count(
-    const slab_pool *pool
-) {
-    return (pool != NULL)
-        ? pool->live_count
-        : 0
-    ;
-}
-
-size_t slab_pool_high_watermark(
-    const slab_pool *pool
-) {
-    return (pool != NULL)
-        ? pool->high_watermark
         : 0
     ;
 }
@@ -302,7 +229,6 @@ static int slab_pool_grow(
     block->next = pool->blocks;
     pool->blocks = block;
     pool->bytes_owned += allocation_bytes;
-    pool->block_count++;
     pool->free_slot_count += pool->objects_per_block;
 
     /* Carve the new block into fixed-size slots and prepend each one to the

@@ -12,6 +12,9 @@
  * When automatic resize is disabled, insertion overflow falls back to a small
  * lock-protected stash.  The stash is only touched after the primary table
  * misses/fails, so the normal hit path remains the hopscotch bitmap path.
+ *
+ * @author  J.W. Moolman
+ * @date    2026-06-07
  */
 
 #ifndef LF_HOPSCOTCH_IMPL_H

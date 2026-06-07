@@ -27,7 +27,7 @@ zig build -Doptimize=ReleaseFast htbench_resize
   --warmup-ops 65536 \
   --repetitions 5 \
   --stats off \
-  --csv > results/lookup-hit-open-addressing.csv
+  --csv > results/lookup_hit_open_addressing.csv
 ```
 
 ## Resize Example
@@ -39,7 +39,7 @@ zig build -Doptimize=ReleaseFast htbench_resize
   --timed-ops 1048576 \
   --repetitions 5 \
   --stats off \
-  --csv > results/resize-build-adv-open-addressing.csv
+  --csv > results/resize_build_adv_open_addressing.csv
 ```
 
 ## Concurrent Example
@@ -52,7 +52,7 @@ zig build -Doptimize=ReleaseFast htbench_resize
   --thread-count 8 \
   --repetitions 5 \
   --stats off \
-  --csv > results/concurrent-lookup-p-open-addressing.csv
+  --csv > results/concurrent_lookup_p_open_addressing.csv
 ```
 
 ## Measurement Rules
@@ -63,6 +63,8 @@ zig build -Doptimize=ReleaseFast htbench_resize
   the result.
 - Use the same dataset size, load factor, keyspace mode, seed, and repetition
   count when comparing implementations.
+- Use the exact implementation names shown by `--help`; these names come from
+  the central backend registry and are also used in CSV output.
 - Keep raw CSVs in `results/`; summarize stable conclusions in the relevant
   documentation or report notes.
 - Treat small smoke runs as build validation only, not performance evidence.

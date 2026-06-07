@@ -15,7 +15,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "backend_util.h"
+#include "backend_config.h"
+#include "capacity_util.h"
+#include "hash_util.h"
+#include "memory_util.h"
+#include "resize_stats.h"
+#include "stats_util.h"
 #include "hopscotch_impl.h"
 #include "ht_internal.h"
 
@@ -45,52 +50,6 @@
 #endif
 
 #define HOPSCOTCH_TAG(hash) ht_hash_tag_u8(hash)
-
-#define HOPSCOTCH_ADD_BYTES(total, extra)                                     \
-    do {                                                                      \
-        if ((total) != SIZE_MAX) {                                            \
-            (total) = ((total) > SIZE_MAX - (extra))                          \
-                ? SIZE_MAX                                                    \
-                : (total) + (extra);                                          \
-        }                                                                     \
-    } while (0)
-
-#define HOPSCOTCH_ADD_ARRAY_BYTES(total, t, member)                           \
-    do {                                                                      \
-        if ((total) != SIZE_MAX) {                                            \
-            if ((t)->capacity > SIZE_MAX / sizeof(*(t)->member)) {            \
-                (total) = SIZE_MAX;                                           \
-            } else {                                                          \
-                HOPSCOTCH_ADD_BYTES(                                          \
-                    (total),                                                  \
-                    (t)->capacity * sizeof(*(t)->member)                      \
-                );                                                            \
-            }                                                                 \
-        }                                                                     \
-    } while (0)
-
-#define HOPSCOTCH_UPDATE_BYTES_USED(t)                                        \
-    do {                                                                      \
-        if ((t) != NULL && (t)->collect_stats) {                              \
-            size_t hopscotch_bytes = sizeof(*(t));                            \
-            HOPSCOTCH_ADD_ARRAY_BYTES(hopscotch_bytes, (t), buckets);         \
-            HOPSCOTCH_ADD_ARRAY_BYTES(hopscotch_bytes, (t), state);           \
-            HOPSCOTCH_ADD_ARRAY_BYTES(hopscotch_bytes, (t), tag);             \
-            if (hopscotch_bytes != SIZE_MAX &&                                \
-                (t)->overflow_capacity != 0) {                                \
-                if ((t)->overflow_capacity >                                  \
-                    SIZE_MAX / sizeof(*(t)->overflow)) {                      \
-                    hopscotch_bytes = SIZE_MAX;                               \
-                } else {                                                      \
-                    HOPSCOTCH_ADD_BYTES(                                      \
-                        hopscotch_bytes,                                      \
-                        (t)->overflow_capacity * sizeof(*(t)->overflow)       \
-                    );                                                        \
-                }                                                             \
-            }                                                                 \
-            (t)->stats.bytes_used = hopscotch_bytes;                          \
-        }                                                                     \
-    } while (0)
 
 /* --- function prototypes -------------------------------------------------- */
 
@@ -206,6 +165,10 @@ static void hopscotch_set_capacity_fields(
     size_t capacity
 );
 
+static void hopscotch_update_bytes_used(
+    hopscotch_table *t
+);
+
 HOPSCOTCH_INLINE ht_result hopscotch_find_slot(
     const hopscotch_table *t,
     ht_key_t key,
@@ -304,8 +267,8 @@ ht_result hopscotch_create_impl_ex(
 ) {
 
     hopscotch_table *t;
-    size_t capacity;
-    size_t min_capacity;
+    ht_backend_config resolved;
+    ht_result rc;
 
     if (out == NULL) {
         return HT_ERR_INVALID;
@@ -316,62 +279,43 @@ ht_result hopscotch_create_impl_ex(
         return HT_ERR_INVALID;
     }
 
+    rc = ht_backend_config_resolve(
+        cfg,
+        DEFAULT_INITIAL_CAPACITY,
+        DEFAULT_MIN_CAPACITY,
+        DEFAULT_MAX_LOAD,
+        DEFAULT_MIN_LOAD,
+        &resolved
+    );
+    if (rc != HT_OK) {
+        return rc;
+    }
+
     t = calloc(1, sizeof(*t));
     if (t == NULL) {
         return HT_ERR_OOM;
     }
 
-    capacity = (cfg->init_capacity > 0)
-        ? cfg->init_capacity
-        : DEFAULT_INITIAL_CAPACITY
-    ;
-
-    capacity = next_pow2(capacity);
-
-    min_capacity = (cfg->min_capacity > 0)
-        ? cfg->min_capacity
-        : DEFAULT_MIN_CAPACITY
-    ;
-
-    min_capacity = next_pow2(min_capacity);
-
-    if (capacity == 0 || min_capacity == 0) {
-        free(t);
-        return HT_ERR_INVALID;
-    }
-
-    capacity = (capacity < min_capacity)
-        ? min_capacity
-        : capacity;
-
-    if (hopscotch_alloc_arrays(t, capacity) != HT_OK) {
+    if (hopscotch_alloc_arrays(t, resolved.capacity) != HT_OK) {
         free(t);
         return HT_ERR_OOM;
     }
 
-    t->min_capacity = min_capacity;
+    t->min_capacity = resolved.min_capacity;
     t->size         = 0;
     t->used         = 0;
     t->overflow     = NULL;
     t->overflow_size = 0;
     t->overflow_capacity = 0;
+    t->max_load_factor = resolved.max_load_factor;
+    t->min_load_factor = resolved.min_load_factor;
+    t->resize_mode   = resolved.resize_mode;
+    t->hash_fn       = resolved.hash_fn;
+    t->hash_seed     = resolved.hash_seed;
+    t->collect_stats = resolved.collect_stats;
 
-    t->max_load_factor = (cfg->max_load_factor > 0.0)
-        ? cfg->max_load_factor
-        : DEFAULT_MAX_LOAD;
-    t->min_load_factor = (cfg->min_load_factor > 0.0)
-        ? cfg->min_load_factor
-        : DEFAULT_MIN_LOAD;
-
-    t->resize_mode   = cfg->rsz_mode;
-    t->hash_fn       = (cfg->hash_fn != NULL)
-        ? cfg->hash_fn : default_hash
-    ;
-    t->hash_seed     = cfg->hash_seed;
-    t->collect_stats = cfg->collect_stats;
-
-    ht_resize_stats_init(&t->stats, t->collect_stats, capacity);
-    HOPSCOTCH_UPDATE_BYTES_USED(t);
+    ht_resize_stats_init(&t->stats, t->collect_stats, t->capacity);
+    hopscotch_update_bytes_used(t);
     HOPSCOTCH_CHECK_VALID(t);
     *out = t;
     return HT_OK;
@@ -719,16 +663,23 @@ static ht_result hopscotch_reserve_impl(
     size_t capacity
 ) {
     hopscotch_table *t = impl;
+    size_t target;
+    ht_result rc;
 
     if (t == NULL) {
         return HT_ERR_INVALID;
     }
 
-    if (capacity <= t->capacity) {
+    rc = ht_reserve_target(t->capacity, capacity, &target);
+    if (rc != HT_OK) {
+        return rc;
+    }
+
+    if (target == t->capacity) {
         return HT_OK;
     }
 
-    return hopscotch_resize(t, capacity);
+    return hopscotch_resize(t, target);
 }
 
 static ht_result hopscotch_rehash_impl(
@@ -737,14 +688,15 @@ static ht_result hopscotch_rehash_impl(
 ) {
     hopscotch_table *t = impl;
     size_t target;
+    ht_result rc;
 
     if (t == NULL) {
         return HT_ERR_INVALID;
     }
 
-    target = (capacity > t->size) ? capacity : t->size;
-    if (target < t->min_capacity) {
-        target = t->min_capacity;
+    rc = ht_rehash_target(t->size, t->min_capacity, capacity, &target);
+    if (rc != HT_OK) {
+        return rc;
     }
 
     return hopscotch_resize(t, target);
@@ -775,13 +727,34 @@ static ht_result hopscotch_reset_stats_impl(
 
     memset(&t->stats, 0, sizeof(t->stats));
     ht_resize_stats_init(&t->stats, t->collect_stats, t->capacity);
-    HOPSCOTCH_UPDATE_BYTES_USED(t);
+    hopscotch_update_bytes_used(t);
     return HT_OK;
 }
 
 /* ------------------------------------------------------------------------- */
 /* internal helpers                                                          */
 /* ------------------------------------------------------------------------- */
+
+static void hopscotch_update_bytes_used(
+    hopscotch_table *t
+) {
+    size_t bytes;
+
+    if (t == NULL || !t->collect_stats) {
+        return;
+    }
+
+    bytes = sizeof(*t);
+    bytes = ht_bytes_add_array_or_max(bytes, t->capacity, sizeof(*t->buckets));
+    bytes = ht_bytes_add_array_or_max(bytes, t->capacity, sizeof(*t->state));
+    bytes = ht_bytes_add_array_or_max(bytes, t->capacity, sizeof(*t->tag));
+    bytes = ht_bytes_add_array_or_max(
+        bytes,
+        t->overflow_capacity,
+        sizeof(*t->overflow)
+    );
+    t->stats.bytes_used = bytes;
+}
 
 static void hopscotch_set_capacity_fields(
     hopscotch_table *t,
@@ -866,9 +839,9 @@ static ht_result hopscotch_resize(
         new_capacity = t->min_capacity;
     }
 
-    new_capacity = next_pow2(new_capacity);
-    if (new_capacity == 0) {
-        return HT_ERR_INVALID;
+    result = ht_checked_next_pow2(new_capacity, &new_capacity);
+    if (result != HT_OK) {
+        return result;
     }
 
     while ((double)t->size > (double)new_capacity * t->max_load_factor) {
@@ -990,7 +963,7 @@ static ht_result hopscotch_resize(
         start_ns
     );
 
-    HOPSCOTCH_UPDATE_BYTES_USED(t);
+    hopscotch_update_bytes_used(t);
     HOPSCOTCH_CHECK_VALID(t);
 
     free(old_buckets);
@@ -1269,7 +1242,7 @@ static ht_result hopscotch_overflow_insert(
 
         t->overflow = new_overflow;
         t->overflow_capacity = new_capacity;
-        HOPSCOTCH_UPDATE_BYTES_USED(t);
+        hopscotch_update_bytes_used(t);
     }
 
     t->overflow[t->overflow_size].hash = hash;

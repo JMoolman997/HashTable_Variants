@@ -15,7 +15,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "backend_util.h"
+#include "backend_config.h"
+#include "capacity_util.h"
+#include "hash_util.h"
+#include "memory_util.h"
+#include "resize_stats.h"
+#include "stats_util.h"
 #include "linear_hashing_impl.h"
 #include "ht_internal.h"
 #include "slab_pool.h"
@@ -99,28 +104,30 @@ ht_result linear_hashing_create_impl_ex(
     void           **out
 ) {
     linear_hashing_table *t;
-    size_t init_buckets;
+    ht_backend_config resolved;
+    ht_result rc;
 
     if (out == NULL) { return HT_ERR_INVALID; }
     *out = NULL;
 
     if (cfg == NULL) { return HT_ERR_INVALID; }
 
+    rc = ht_backend_config_resolve(
+        cfg,
+        LINEAR_HASHING_DEFAULT_INITIAL_CAPACITY,
+        LINEAR_HASHING_DEFAULT_MIN_CAPACITY,
+        LINEAR_HASHING_DEFAULT_MAX_LOAD,
+        LINEAR_HASHING_DEFAULT_MIN_LOAD,
+        &resolved
+    );
+    if (rc != HT_OK) {
+        return rc;
+    }
+
     t = calloc(1, sizeof(*t));
     if (t == NULL) { return HT_ERR_OOM; }
 
-    init_buckets = (cfg->init_capacity > 0)
-        ? cfg->init_capacity
-        : LINEAR_HASHING_DEFAULT_INITIAL_CAPACITY
-    ;
-    init_buckets = next_pow2(init_buckets);
-
-    if (init_buckets == 0) {
-        free(t);
-        return HT_ERR_INVALID;
-    }
-
-    t->buckets = calloc(init_buckets, sizeof(*t->buckets));
+    t->buckets = calloc(resolved.capacity, sizeof(*t->buckets));
     if (t->buckets == NULL) {
         free(t);
         return HT_ERR_OOM;
@@ -136,28 +143,18 @@ ht_result linear_hashing_create_impl_ex(
         return HT_ERR_OOM;
     }
 
-    t->initial_buckets = init_buckets;
-    t->total_buckets   = init_buckets;
-    t->capacity        = init_buckets;
+    t->initial_buckets = resolved.capacity;
+    t->total_buckets   = resolved.capacity;
+    t->capacity        = resolved.capacity;
     t->split_ptr       = 0;
     t->level           = 0;
     t->size            = 0;
-    
-    t->max_load_factor = (cfg->max_load_factor > 0.0)
-        ? cfg->max_load_factor
-        : LINEAR_HASHING_DEFAULT_MAX_LOAD
-    ;
-    t->min_load_factor = (cfg->min_load_factor > 0.0)
-        ? cfg->min_load_factor
-        : LINEAR_HASHING_DEFAULT_MIN_LOAD
-    ;
-    t->resize_mode     = cfg->rsz_mode;
-    t->hash_fn         = (cfg->hash_fn != NULL)
-        ? cfg->hash_fn
-        : default_hash
-    ;
-    t->hash_seed       = cfg->hash_seed;
-    t->collect_stats   = cfg->collect_stats;
+    t->max_load_factor = resolved.max_load_factor;
+    t->min_load_factor = resolved.min_load_factor;
+    t->resize_mode     = resolved.resize_mode;
+    t->hash_fn         = resolved.hash_fn;
+    t->hash_seed       = resolved.hash_seed;
+    t->collect_stats   = resolved.collect_stats;
 
     linear_hashing_update_bytes_used(t);
     ht_resize_stats_init(&t->stats, t->collect_stats, t->total_buckets);
@@ -543,12 +540,8 @@ static ht_result linear_hashing_split(linear_hashing_table *t) {
         size_t new_bytes;
         linear_hashing_segment **new_buckets;
 
-        if (t->capacity > SIZE_MAX / 2u) {
-            return HT_ERR_OOM;
-        }
-        new_cap = t->capacity * 2u;
-        new_bytes = ht_bytes_mul_or_max(new_cap, sizeof(*new_buckets));
-        if (new_bytes == SIZE_MAX) {
+        if (ht_checked_mul_size(t->capacity, 2u, &new_cap) != HT_OK ||
+            ht_checked_mul_size(new_cap, sizeof(*new_buckets), &new_bytes) != HT_OK) {
             return HT_ERR_OOM;
         }
 

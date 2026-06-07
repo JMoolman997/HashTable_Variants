@@ -15,6 +15,9 @@
  * hatch matches the practical assumption used by hopscotch insertion: if the
  * bounded displacement search cannot create a neighbourhood slot, grow and try
  * again.
+ *
+ * @author  J.W. Moolman
+ * @date    2026-06-07
  */
 
 #ifndef _POSIX_C_SOURCE

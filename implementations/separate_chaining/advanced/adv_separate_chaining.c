@@ -11,7 +11,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "backend_util.h"
+#include "backend_config.h"
+#include "capacity_util.h"
+#include "hash_util.h"
+#include "memory_util.h"
+#include "resize_stats.h"
+#include "stats_util.h"
 #include "adv_separate_chaining.h"
 #include "ht_internal.h"
 #include "slab_pool.h"
@@ -127,28 +132,30 @@ ht_result adv_separate_chaining_create_impl_ex(
     void           **out
 ) {
     adv_separate_chaining_table *t;
-    size_t init_capacity;
+    ht_backend_config resolved;
+    ht_result rc;
 
     if (out == NULL) { return HT_ERR_INVALID; }
     *out = NULL;
 
     if (cfg == NULL) { return HT_ERR_INVALID; }
 
+    rc = ht_backend_config_resolve(
+        cfg,
+        ADV_SEPARATE_CHAINING_DEFAULT_INITIAL_CAPACITY,
+        ADV_SEPARATE_CHAINING_DEFAULT_MIN_CAPACITY,
+        ADV_SEPARATE_CHAINING_DEFAULT_MAX_LOAD,
+        ADV_SEPARATE_CHAINING_DEFAULT_MIN_LOAD,
+        &resolved
+    );
+    if (rc != HT_OK) {
+        return rc;
+    }
+
     t = calloc(1, sizeof(*t));
     if (t == NULL) { return HT_ERR_OOM; }
 
-    init_capacity = (cfg->init_capacity > 0)
-        ? cfg->init_capacity
-        : ADV_SEPARATE_CHAINING_DEFAULT_INITIAL_CAPACITY
-    ;
-    init_capacity = next_pow2(init_capacity);
-
-    if (init_capacity == 0) {
-        free(t);
-        return HT_ERR_INVALID;
-    }
-
-    t->buckets = calloc(init_capacity, sizeof(*t->buckets));
+    t->buckets = calloc(resolved.capacity, sizeof(*t->buckets));
     if (t->buckets == NULL) {
         free(t);
         return HT_ERR_OOM;
@@ -164,28 +171,15 @@ ht_result adv_separate_chaining_create_impl_ex(
         return HT_ERR_OOM;
     }
 
-    t->capacity     = init_capacity;
-    t->min_capacity = (cfg->min_capacity > 0)
-        ? cfg->min_capacity
-        : ADV_SEPARATE_CHAINING_DEFAULT_MIN_CAPACITY
-    ;
+    t->capacity     = resolved.capacity;
+    t->min_capacity = resolved.min_capacity;
     t->size         = 0;
-    
-    t->max_load_factor = (cfg->max_load_factor > 0.0)
-        ? cfg->max_load_factor
-        : ADV_SEPARATE_CHAINING_DEFAULT_MAX_LOAD
-    ;
-    t->min_load_factor = (cfg->min_load_factor > 0.0)
-        ? cfg->min_load_factor
-        : ADV_SEPARATE_CHAINING_DEFAULT_MIN_LOAD
-    ;
-    t->resize_mode   = cfg->rsz_mode;
-    t->hash_fn       = (cfg->hash_fn != NULL)
-        ? cfg->hash_fn
-        : default_hash
-    ;
-    t->hash_seed     = cfg->hash_seed;
-    t->collect_stats = cfg->collect_stats;
+    t->max_load_factor = resolved.max_load_factor;
+    t->min_load_factor = resolved.min_load_factor;
+    t->resize_mode   = resolved.resize_mode;
+    t->hash_fn       = resolved.hash_fn;
+    t->hash_seed     = resolved.hash_seed;
+    t->collect_stats = resolved.collect_stats;
 
     adv_update_bytes_used(t);
     ht_resize_stats_init(&t->stats, t->collect_stats, t->capacity);
@@ -576,10 +570,14 @@ static ht_result adv_separate_chaining_reserve_impl(
     size_t capacity
 ) {
     adv_separate_chaining_table *t = impl;
+    size_t target;
+    ht_result rc;
 
     if (t == NULL) { return HT_ERR_INVALID; }
-    if (capacity <= t->capacity) { return HT_OK; }
-    return adv_resize(t, capacity);
+    rc = ht_reserve_target(t->capacity, capacity, &target);
+    if (rc != HT_OK) { return rc; }
+    if (target == t->capacity) { return HT_OK; }
+    return adv_resize(t, target);
 }
 
 static ht_result adv_separate_chaining_rehash_impl(
@@ -587,9 +585,13 @@ static ht_result adv_separate_chaining_rehash_impl(
     size_t capacity
 ) {
     adv_separate_chaining_table *t = impl;
+    size_t target;
+    ht_result rc;
 
     if (t == NULL) { return HT_ERR_INVALID; }
-    return adv_resize(t, capacity);
+    rc = ht_rehash_target(t->size, t->min_capacity, capacity, &target);
+    if (rc != HT_OK) { return rc; }
+    return adv_resize(t, target);
 }
 
 static ht_result adv_separate_chaining_get_stats_impl(
@@ -688,13 +690,12 @@ static ht_result adv_resize(adv_separate_chaining_table *t, size_t new_capacity)
         return HT_ERR_INVALID;
     }
 
-    new_capacity = next_pow2(
-        (new_capacity < t->min_capacity)
-            ? t->min_capacity
-            : new_capacity
-    );
-    if (new_capacity == 0) {
-        return HT_ERR_OOM;
+    if (new_capacity < t->min_capacity) {
+        new_capacity = t->min_capacity;
+    }
+    rc = ht_checked_next_pow2(new_capacity, &new_capacity);
+    if (rc != HT_OK) {
+        return rc;
     }
     if (new_capacity == t->capacity) {
         return HT_OK;

@@ -58,6 +58,15 @@ typedef struct {
   ht_stats stats;    /**< Accumulated operation and memory statistics. */
 } backshift_table;
 
+static inline int backshift_can_move(
+    size_t ideal,
+    size_t hole,
+    size_t scan,
+    size_t mask
+) {
+  return ((scan - ideal) & mask) > ((hole - ideal) & mask);
+}
+
 /* --- function prototypes -------------------------------------------------- */
 
 /**

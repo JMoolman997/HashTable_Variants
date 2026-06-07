@@ -43,8 +43,10 @@ const resize_c_flags = [_][]const u8{
 const ht_core_sources = [_][]const u8{
     "src/core/ht.c",
     "src/core/ht_bind.c",
+    "src/core/ht_registry.c",
     "src/util/hash_func.c",
-    "src/util/backend_util.c",
+    "src/util/backend_config.c",
+    "src/util/resize_stats.c",
     "src/util/slab_pool.c",
     "implementations/open_addressing/open_addressing/open_addressing_impl.c",
     "implementations/open_addressing/advanced/adv_open_addressing_impl.c",
