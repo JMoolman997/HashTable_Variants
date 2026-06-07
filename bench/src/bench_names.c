@@ -11,7 +11,6 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "ht.h"
 #include "ht_registry.h"
 #include "bench_names.h"
 
@@ -118,18 +117,6 @@ const char *bench_kind_name(
         bench_kind_maps,
         BENCH_ARRAY_LEN(bench_kind_maps)
     );
-}
-
-const char *bench_impl_name(
-    ht_impl impl
-) {
-    return ht_impl_name(impl);
-}
-
-int bench_impl_is_known(
-    ht_impl impl
-) {
-    return ht_registry_impl_is_known(impl);
 }
 
 const char *bench_workload_name(

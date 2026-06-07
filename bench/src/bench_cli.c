@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ht.h"
 #include "bench_cli.h"
 #include "bench_config.h"
 #include "bench_plan.h"
@@ -857,7 +858,7 @@ static void bench_report_repetition_status(
             "[htbench] %s workload=%s impl=%s repetition=%zu/%zu %s\n",
             bench_kind_name(plan->kind),
             bench_workload_name(plan->workload),
-            bench_impl_name(plan->impl_kind),
+            ht_impl_name(plan->impl_kind),
             repetition + 1,
             plan->repetitions,
             status
@@ -867,7 +868,7 @@ static void bench_report_repetition_status(
             stderr,
             "[htbench] %s impl=%s repetition=%zu/%zu %s\n",
             bench_kind_name(plan->kind),
-            bench_impl_name(plan->impl_kind),
+            ht_impl_name(plan->impl_kind),
             repetition + 1,
             plan->repetitions,
             status

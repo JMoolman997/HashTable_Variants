@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "ht.h"
 #include "bench_output.h"
 #include "bench_names.h"
 
@@ -123,7 +124,7 @@ void bench_output_write_csv_row(
             "%zu,%.6f,"
             "%.6f,%zu,%zu,%.6f,%.6f,%.6f\n",
             bench_kind_name(spec->kind),
-            bench_impl_name(spec->impl_kind),
+            ht_impl_name(spec->impl_kind),
             bench_hash_name(spec->hash_fn),
             spec->hash_seed,
             bench_stats_mode_name(spec->stats_mode),
@@ -216,7 +217,7 @@ void bench_output_write_resize_csv_row(
             "%" PRIu64 ","
             "%" PRIu64 ",%zu,%zu\n",
             bench_kind_name(spec->kind),
-            bench_impl_name(spec->impl_kind),
+            ht_impl_name(spec->impl_kind),
             bench_hash_name(spec->hash_fn),
             spec->hash_seed,
             bench_stats_mode_name(spec->stats_mode),
@@ -318,7 +319,7 @@ void bench_output_write_concurrent_csv_row(
             "%.6f,%zu,%zu,%.6f,%.6f,%.6f,"
             "%zu,%" PRIu64 ",%.6f,%.6f,%" PRIu64 "\n",
             bench_kind_name(spec->kind),
-            bench_impl_name(spec->impl_kind),
+            ht_impl_name(spec->impl_kind),
             bench_hash_name(spec->hash_fn),
             spec->hash_seed,
             bench_stats_mode_name(spec->stats_mode),

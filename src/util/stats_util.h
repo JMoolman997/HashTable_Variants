@@ -36,16 +36,6 @@ static inline void ht_stats_record_probe(
     }
 }
 
-static inline void ht_stats_set_bytes(
-    ht_stats *stats,
-    int collect_stats,
-    size_t bytes
-) {
-    if (stats != NULL && collect_stats) {
-        stats->bytes_used = bytes;
-    }
-}
-
 static inline void ht_stats_set_slot_array_bytes(
     ht_stats *stats,
     int collect_stats,
@@ -53,11 +43,10 @@ static inline void ht_stats_set_slot_array_bytes(
     size_t capacity,
     size_t slot_size
 ) {
-    ht_stats_set_bytes(
-        stats,
-        collect_stats,
-        ht_bytes_used_snapshot(table_size, capacity, slot_size)
-    );
+    if (stats != NULL && collect_stats) {
+        stats->bytes_used =
+            ht_bytes_add_array_or_max(table_size, capacity, slot_size);
+    }
 }
 
 #define HT_STATS_INC(t, field)                                                \

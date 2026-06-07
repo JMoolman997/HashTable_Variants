@@ -16,6 +16,7 @@
 
 #include "bench_plan.h"
 #include "bench_names.h"
+#include "ht_registry.h"
 
 /* --- function prototypes -------------------------------------------------- */
 
@@ -439,7 +440,7 @@ static int bench_kind_is_concurrent(
 static int bench_impl_is_valid(
     ht_impl impl_kind
 ) {
-    return bench_impl_is_known(impl_kind);
+    return ht_registry_find(impl_kind) != NULL;
 }
 
 static int bench_capacity_mode_is_valid(

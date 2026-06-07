@@ -102,8 +102,7 @@ ht_result simd_create_impl_ex(const ht_config *cfg, void **out) {
     return rc;
   }
 
-  rc = ht_control_bytes_for_group(resolved.capacity, GROUP_SIZE, GROUP_SIZE,
-                                  &ctrl_bytes);
+  rc = ht_checked_add_size(resolved.capacity, GROUP_SIZE, &ctrl_bytes);
   if (rc != HT_OK) {
     return rc;
   }
@@ -395,8 +394,7 @@ static void simd_update_bytes_used(simd_table *t) {
     size_t ctrl_bytes;
     size_t bytes = sizeof(*t);
 
-    if (ht_control_bytes_for_group(t->capacity, GROUP_SIZE, GROUP_SIZE,
-                                   &ctrl_bytes) != HT_OK) {
+    if (ht_checked_add_size(t->capacity, GROUP_SIZE, &ctrl_bytes) != HT_OK) {
       bytes = SIZE_MAX;
     } else {
       bytes = ht_bytes_add_or_max(bytes, ctrl_bytes);
@@ -428,8 +426,7 @@ static ht_result simd_resize(simd_table *t, size_t new_capacity) {
   if (new_capacity == t->capacity) {
     return HT_OK;
   }
-  rc = ht_control_bytes_for_group(new_capacity, GROUP_SIZE, GROUP_SIZE,
-                                  &ctrl_bytes);
+  rc = ht_checked_add_size(new_capacity, GROUP_SIZE, &ctrl_bytes);
   if (rc != HT_OK) {
     return rc;
   }

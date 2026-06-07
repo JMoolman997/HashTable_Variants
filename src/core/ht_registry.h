@@ -25,7 +25,6 @@ typedef struct {
 const ht_registry_entry *ht_registry_entries(size_t *count);
 const ht_registry_entry *ht_registry_find(ht_impl impl);
 const char *ht_registry_impl_name(ht_impl impl);
-int ht_registry_impl_is_known(ht_impl impl);
 
 ht_result ht_registry_create_backend(
     const ht_config *cfg,

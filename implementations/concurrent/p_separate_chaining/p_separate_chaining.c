@@ -1398,7 +1398,7 @@ static size_t p_sep_bytes_used_locked(
 
     if (table == NULL) { return 0; }
 
-    bytes = ht_bytes_used_snapshot(
+    bytes = ht_bytes_add_array_or_max(
         sizeof(*table),
         table->capacity,
         sizeof(*table->buckets)

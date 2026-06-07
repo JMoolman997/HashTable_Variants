@@ -140,10 +140,8 @@ ht_result adv_open_addressing_create_impl_ex(const ht_config *cfg, void **out) {
   if (rc != HT_OK) {
     return rc;
   }
-  rc = ht_control_bytes_for_group(resolved.capacity,
-                                  ADV_OPEN_ADDRESSING_GROUP_SIZE,
-                                  ADV_OPEN_ADDRESSING_GROUP_SIZE - 1u,
-                                  &ctrl_bytes);
+  rc = ht_checked_add_size(
+      resolved.capacity, ADV_OPEN_ADDRESSING_GROUP_SIZE - 1u, &ctrl_bytes);
   if (rc != HT_OK) {
     return rc;
   }
@@ -538,9 +536,9 @@ adv_open_addressing_update_bytes_used(adv_open_addressing_table *t) {
   }
 
   bytes = sizeof(*t);
-  if (ht_control_bytes_for_group(t->capacity, ADV_OPEN_ADDRESSING_GROUP_SIZE,
-                                 ADV_OPEN_ADDRESSING_GROUP_SIZE - 1u,
-                                 &ctrl_bytes) != HT_OK) {
+  if (ht_checked_add_size(
+          t->capacity, ADV_OPEN_ADDRESSING_GROUP_SIZE - 1u, &ctrl_bytes) !=
+      HT_OK) {
     bytes = SIZE_MAX;
   } else {
     bytes = ht_bytes_add_or_max(bytes, ctrl_bytes);
@@ -602,9 +600,8 @@ static ht_result adv_open_addressing_resize(adv_open_addressing_table *t,
   old_used = t->used;
   resize_start_ns = ht_resize_instrumentation_start(t->collect_stats);
 
-  rc = ht_control_bytes_for_group(new_capacity, ADV_OPEN_ADDRESSING_GROUP_SIZE,
-                                  ADV_OPEN_ADDRESSING_GROUP_SIZE - 1u,
-                                  &ctrl_bytes);
+  rc = ht_checked_add_size(
+      new_capacity, ADV_OPEN_ADDRESSING_GROUP_SIZE - 1u, &ctrl_bytes);
   if (rc != HT_OK) {
     return rc;
   }

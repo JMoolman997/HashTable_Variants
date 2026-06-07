@@ -46,16 +46,6 @@ static inline ht_result ht_checked_mul_size(
     return HT_OK;
 }
 
-static inline ht_result ht_control_bytes_for_group(
-    size_t capacity,
-    size_t group_size,
-    size_t padding,
-    size_t *out
-) {
-    (void)group_size;
-    return ht_checked_add_size(capacity, padding, out);
-}
-
 static inline size_t ht_bytes_add_or_max(size_t total, size_t extra) {
     if (total == SIZE_MAX || extra > SIZE_MAX - total) {
         return SIZE_MAX;
@@ -78,14 +68,6 @@ static inline size_t ht_bytes_add_array_or_max(
     size_t size
 ) {
     return ht_bytes_add_or_max(total, ht_bytes_mul_or_max(count, size));
-}
-
-static inline size_t ht_bytes_used_snapshot(
-    size_t table_size,
-    size_t capacity,
-    size_t slot_size
-) {
-    return ht_bytes_add_array_or_max(table_size, capacity, slot_size);
 }
 
 #endif /* HT_UTIL_MEMORY_UTIL_H */

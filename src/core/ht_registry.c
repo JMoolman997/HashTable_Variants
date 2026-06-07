@@ -174,10 +174,6 @@ const char *ht_registry_impl_name(ht_impl impl) {
     return (entry != NULL) ? entry->name : "unknown";
 }
 
-int ht_registry_impl_is_known(ht_impl impl) {
-    return ht_registry_find(impl) != NULL ? 1 : 0;
-}
-
 ht_result ht_registry_create_backend(
     const ht_config *cfg,
     void **impl_out,

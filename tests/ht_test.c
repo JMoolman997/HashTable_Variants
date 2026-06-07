@@ -154,8 +154,7 @@ static int test_internal_helpers(
 
     if (ht_checked_add_size(SIZE_MAX, 1, &out) != HT_ERR_OOM ||
         ht_checked_mul_size(SIZE_MAX, 2, &out) != HT_ERR_OOM ||
-        ht_control_bytes_for_group(16, 16, 15, &out) != HT_OK || out != 31 ||
-        ht_control_bytes_for_group(SIZE_MAX, 16, 15, &out) != HT_ERR_OOM) {
+        ht_checked_add_size(16, 15, &out) != HT_OK || out != 31) {
         fprintf(stderr, "[FAIL] memory helper overflow handling\n");
         return -1;
     }
@@ -169,8 +168,7 @@ static int test_internal_helpers(
 
     entries = ht_registry_entries(&count);
     if (entries == NULL || count == 0 ||
-        ht_registry_find((ht_impl)9999) != NULL ||
-        ht_registry_impl_is_known((ht_impl)9999) != 0) {
+        ht_registry_find((ht_impl)9999) != NULL) {
         fprintf(stderr, "[FAIL] registry basic lookup\n");
         return -1;
     }

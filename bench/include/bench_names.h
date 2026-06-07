@@ -22,20 +22,6 @@ const char *bench_kind_name(
 );
 
 /**
- * @brief Return the canonical CLI/CSV name for an implementation.
- */
-const char *bench_impl_name(
-    ht_impl impl
-);
-
-/**
- * @brief Return non-zero when an implementation enum has a canonical name.
- */
-int bench_impl_is_known(
-    ht_impl impl
-);
-
-/**
  * @brief Return the canonical CLI/CSV name for a workload mix.
  */
 const char *bench_workload_name(
