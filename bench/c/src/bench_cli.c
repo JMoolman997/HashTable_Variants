@@ -53,6 +53,7 @@ typedef enum {
     BENCH_OPT_CONCURRENT_RESIZE,
     BENCH_OPT_CSV,
     BENCH_OPT_HASH_FN,
+    BENCH_OPT_STATS,
     BENCH_OPT_HELP
 } bench_option_kind;
 
@@ -219,6 +220,7 @@ BENCH_DEFINE_VALUE_PARSER(bench_parse_u64_value, bench_parse_u64)
 BENCH_DEFINE_VALUE_PARSER(bench_parse_workload_value, bench_parse_workload)
 BENCH_DEFINE_VALUE_PARSER(bench_parse_resize_mode_value, bench_parse_resize_mode)
 BENCH_DEFINE_VALUE_PARSER(bench_parse_keyspace_value, bench_parse_keyspace)
+BENCH_DEFINE_VALUE_PARSER(bench_parse_stats_mode_value, bench_parse_stats_mode)
 
 static int bench_parse_hash_fn_value(
     const char *text,
@@ -257,6 +259,7 @@ static const bench_option_map bench_option_maps[] = {
     {"--concurrent-resize", BENCH_OPT_CONCURRENT_RESIZE},
     {"--csv", BENCH_OPT_CSV},
     {"--hash-fn", BENCH_OPT_HASH_FN},
+    {"--stats", BENCH_OPT_STATS},
     {"--help", BENCH_OPT_HELP},
     {"-h", BENCH_OPT_HELP},
 };
@@ -277,7 +280,7 @@ static const char *const bench_usage_lines[] = {
     "  concurrent-workload",
     "Options:",
     "  --impl <open_addressing|p_open_addressing|",
-    "p_separate_chaining|adv_open_addressing|robin-hood|",
+    "p_separate_chaining|adv_open_addressing|robin_hood|",
     "separate_chaining|hopscotch|lf_hopscotch|backshift|metadata|simd|",
     "bucket_mod_separate_chaining|linked_mod_separate_chaining|",
     "segmented_mod_separate_chaining|fingerprint|linear_hashing|",
@@ -300,6 +303,7 @@ static const char *const bench_usage_lines[] = {
     "  --concurrent-keyspace <disjoint|shared>",
     "  --concurrent-resize <disabled|grow-only>",
     "  --hash-fn <default>",
+    "  --stats <off|on>",
     "  --csv",
     "  --help",
 };
@@ -461,6 +465,13 @@ static const bench_opt_desc bench_opt_descs[] = {
         hash_fn,
         bench_parse_hash_fn_value,
         "--hash-fn",
+        0,
+        0
+    ),
+    [BENCH_OPT_STATS] = BENCH_OPT_VALUE(
+        stats_mode,
+        bench_parse_stats_mode_value,
+        "--stats",
         0,
         0
     ),
@@ -726,6 +737,7 @@ static void bench_spec_init(
     spec->repetitions  = 1;
     spec->capacity_mode = BENCH_CAPACITY_FIXED;
     spec->resize_mode   = BENCH_RESIZE_DISABLED;
+    spec->stats_mode    = BENCH_STATS_OFF;
     spec->concurrent_resize_mode = BENCH_RESIZE_DISABLED;
     spec->concurrent_keyspace_mode = BENCH_KEYSPACE_DISJOINT;
     /* Defaults describe the smallest fixed-capacity steady benchmark. */

@@ -52,6 +52,10 @@ static int bench_resize_mode_is_valid(
     bench_resize_mode resize_mode
 );
 
+static int bench_stats_mode_is_valid(
+    bench_stats_mode stats_mode
+);
+
 static int bench_alpha_is_valid(
     double alpha
 );
@@ -74,6 +78,7 @@ int bench_plan_build(
     plan->trace_seed      = spec->trace_seed;
     plan->capacity_mode   = spec->capacity_mode;
     plan->resize_mode     = spec->resize_mode;
+    plan->stats_mode      = spec->stats_mode;
     plan->concurrent_resize_mode = spec->concurrent_resize_mode;
     plan->concurrent_keyspace_mode = spec->concurrent_keyspace_mode;
     plan->dataset_size    = spec->dataset_size;
@@ -187,6 +192,11 @@ int bench_plan_validate(
 
     if (!bench_resize_mode_is_valid(plan->concurrent_resize_mode)) {
         fprintf(stderr, "Invalid concurrent resize mode\n");
+        return -1;
+    }
+
+    if (!bench_stats_mode_is_valid(plan->stats_mode)) {
+        fprintf(stderr, "Invalid stats mode\n");
         return -1;
     }
 
@@ -444,6 +454,13 @@ static int bench_resize_mode_is_valid(
 ) {
     return (resize_mode >= BENCH_RESIZE_DISABLED &&
             resize_mode <= BENCH_RESIZE_IMPL_DEFAULT);
+}
+
+static int bench_stats_mode_is_valid(
+    bench_stats_mode stats_mode
+) {
+    return (stats_mode == BENCH_STATS_OFF ||
+            stats_mode == BENCH_STATS_ON);
 }
 
 static int bench_alpha_is_valid(

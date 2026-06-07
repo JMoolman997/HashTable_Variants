@@ -220,18 +220,23 @@ static const struct ht_vtable BACKSHIFT_VTABLE = {
 /* public backend entry points                                               */
 /* ------------------------------------------------------------------------- */
 
-void *backshift_create_impl(const ht_config *cfg) {
+ht_result backshift_create_impl_ex(const ht_config *cfg, void **out) {
   backshift_table *t;
   size_t capacity;
   size_t min_capacity;
 
+  if (out == NULL) {
+    return HT_ERR_INVALID;
+  }
+  *out = NULL;
+
   if (cfg == NULL) {
-    return NULL;
+    return HT_ERR_INVALID;
   }
 
   t = calloc(1, sizeof(*t));
   if (t == NULL) {
-    return NULL;
+    return HT_ERR_OOM;
   }
 
   capacity =
@@ -242,6 +247,11 @@ void *backshift_create_impl(const ht_config *cfg) {
       (cfg->min_capacity > 0) ? cfg->min_capacity : DEFAULT_MIN_CAPACITY;
   min_capacity = next_pow2(min_capacity);
 
+  if (capacity == 0 || min_capacity == 0) {
+    free(t);
+    return HT_ERR_INVALID;
+  }
+
   if (capacity < min_capacity) {
     capacity = min_capacity;
   }
@@ -249,7 +259,7 @@ void *backshift_create_impl(const ht_config *cfg) {
   t->slots = calloc(capacity, sizeof(*t->slots));
   if (t->slots == NULL) {
     free(t);
-    return NULL;
+    return HT_ERR_OOM;
   }
 
   t->capacity = capacity;
@@ -269,7 +279,8 @@ void *backshift_create_impl(const ht_config *cfg) {
 
   UPDATE_BYTES_USED(t);
   ht_resize_stats_init(&t->stats, t->collect_stats, t->capacity);
-  return t;
+  *out = t;
+  return HT_OK;
 }
 
 const struct ht_vtable *backshift_vtable(void) { return &BACKSHIFT_VTABLE; }

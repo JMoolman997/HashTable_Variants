@@ -109,6 +109,7 @@ Example:
   --timed-ops 1048576 \
   --warmup-ops 65536 \
   --repetitions 3 \
+  --stats off \
   --csv
 ```
 
@@ -119,7 +120,7 @@ See `docs/benchmarking.md` for benchmark rules and examples.
 1. Add the backend under `implementations/<family>/c/<variant>/`.
 2. Implement private state plus functions matching `src/core/c/ht_internal.h`.
 3. Expose:
-   - `<variant>_create_impl(const ht_config *cfg)`
+   - `<variant>_create_impl_ex(const ht_config *cfg, void **out)`
    - `<variant>_vtable(void)`
    - optional `<variant>_bind_bench_iface(...)`
 4. Add an `HT_IMPL_*` enum value in `include/hash_table/ht_types.h`.

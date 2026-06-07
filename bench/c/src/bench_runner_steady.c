@@ -428,13 +428,17 @@ static int bench_run_lookup_benchmark(
         return -1;
     } /* Lookup benchmarks time queries, not table construction. */
 
-    if (bench_run_lookup_warmup(
-            env->map,
-            query_keys,
-            query_count,
-            plan->warmup_ops,
-            expected_result,
-            bench_name
+    if (bench_run_warmup(
+            plan,
+            prepopulate_keys,
+            prepopulate_count,
+            bench_step_lookup_warmup,
+            &(bench_lookup_ctx) {
+                .keys = query_keys,
+                .key_count = query_count,
+                .expected_result = expected_result,
+                .bench_name = bench_name
+            }
         ) != 0) {
         return -1;
     }

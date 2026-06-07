@@ -53,6 +53,11 @@ typedef enum {
 } bench_resize_mode;
 
 typedef enum {
+    BENCH_STATS_OFF = 0,
+    BENCH_STATS_ON = 1
+} bench_stats_mode;
+
+typedef enum {
     BENCH_KEYSPACE_DISJOINT = 0,
     BENCH_KEYSPACE_SHARED_READ = 1, /* Internal read-only concurrent mode. */
     BENCH_KEYSPACE_SHARED_MIXED = 2
@@ -69,6 +74,7 @@ typedef struct {
     size_t capacity;
     bench_capacity_mode capacity_mode;
     bench_resize_mode resize_mode;
+    bench_stats_mode stats_mode;
     int resize_mode_set;
     bench_resize_mode concurrent_resize_mode;
     bench_keyspace_mode concurrent_keyspace_mode;

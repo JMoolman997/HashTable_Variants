@@ -75,18 +75,23 @@ static const struct ht_vtable SIMD_VTABLE = {
 /* public backend entry points                                               */
 /* ------------------------------------------------------------------------- */
 
-void *simd_create_impl(const ht_config *cfg) {
+ht_result simd_create_impl_ex(const ht_config *cfg, void **out) {
   simd_table *t;
   size_t capacity;
   size_t min_capacity;
 
+  if (out == NULL) {
+    return HT_ERR_INVALID;
+  }
+  *out = NULL;
+
   if (cfg == NULL) {
-    return NULL;
+    return HT_ERR_INVALID;
   }
 
   t = calloc(1, sizeof(*t));
   if (t == NULL) {
-    return NULL;
+    return HT_ERR_OOM;
   }
 
   capacity =
@@ -97,6 +102,11 @@ void *simd_create_impl(const ht_config *cfg) {
       (cfg->min_capacity > 0) ? cfg->min_capacity : DEFAULT_MIN_CAPACITY;
   min_capacity = next_pow2(min_capacity);
 
+  if (capacity == 0 || min_capacity == 0) {
+    free(t);
+    return HT_ERR_INVALID;
+  }
+
   if (capacity < min_capacity) {
     capacity = min_capacity;
   }
@@ -104,7 +114,7 @@ void *simd_create_impl(const ht_config *cfg) {
   /* Extra control bytes let group loads read past the logical end safely. */
   if (posix_memalign((void **)&t->ctrl, 16, capacity + GROUP_SIZE) != 0) {
     free(t);
-    return NULL;
+    return HT_ERR_OOM;
   }
   memset(t->ctrl, SIMD_EMPTY, capacity + GROUP_SIZE);
 
@@ -112,7 +122,7 @@ void *simd_create_impl(const ht_config *cfg) {
   if (t->data == NULL) {
     free(t->ctrl);
     free(t);
-    return NULL;
+    return HT_ERR_OOM;
   }
 
   t->capacity = capacity;
@@ -130,7 +140,8 @@ void *simd_create_impl(const ht_config *cfg) {
 
   simd_update_bytes_used(t);
   ht_resize_stats_init(&t->stats, t->collect_stats, t->capacity);
-  return t;
+  *out = t;
+  return HT_OK;
 }
 
 const struct ht_vtable *simd_vtable(void) { return &SIMD_VTABLE; }

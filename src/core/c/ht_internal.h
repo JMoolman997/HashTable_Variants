@@ -53,13 +53,6 @@ struct ht_vtable {
         ht_key_t key
     );
 
-    /** Insert or replace a key/value pair. Optional. */
-    ht_result (*upsert)(
-        void *impl,
-        ht_key_t key,
-        ht_val_t value
-    );
-
     /** Return the current number of live entries. */
     size_t (*size)(
         const void *impl

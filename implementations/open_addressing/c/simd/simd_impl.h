@@ -71,7 +71,7 @@ typedef struct {
  * @return An initialized backend object on success, or `NULL` if `cfg` is
  *         invalid or allocation fails.
  */
-void *simd_create_impl(const ht_config *cfg);
+ht_result simd_create_impl_ex(const ht_config *cfg, void **out);
 
 /**
  * @brief Return the SIMD tag-scanning backend vtable used by the core wrapper.

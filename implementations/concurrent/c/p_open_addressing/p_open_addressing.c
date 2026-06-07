@@ -249,8 +249,9 @@ static const struct ht_vtable P_OPEN_VTABLE = {
 
 /* --- public backend entry points ------------------------------------------ */
 
-void *p_open_addressing_create_impl(
-    const ht_config *cfg
+ht_result p_open_addressing_create_impl_ex(
+    const ht_config *cfg,
+    void           **out
 ) {
     p_open_table *t;
     p_open_image *img;
@@ -258,8 +259,13 @@ void *p_open_addressing_create_impl(
     size_t min_capacity;
     size_t thread_count;
 
+    if (out == NULL) {
+        return HT_ERR_INVALID;
+    }
+    *out = NULL;
+
     if (cfg == NULL) {
-        return NULL;
+        return HT_ERR_INVALID;
     }
 
     capacity = (cfg->init_capacity > 0)
@@ -267,7 +273,7 @@ void *p_open_addressing_create_impl(
         : DEFAULT_INITIAL_CAPACITY;
     capacity = next_pow2(capacity);
     if (capacity == 0) {
-        return NULL;
+        return HT_ERR_INVALID;
     }
 
     min_capacity = (cfg->min_capacity > 0)
@@ -275,7 +281,7 @@ void *p_open_addressing_create_impl(
         : DEFAULT_MIN_CAPACITY;
     min_capacity = next_pow2(min_capacity);
     if (min_capacity == 0) {
-        return NULL;
+        return HT_ERR_INVALID;
     }
 
     if (capacity < min_capacity) {
@@ -285,26 +291,26 @@ void *p_open_addressing_create_impl(
     thread_count = (cfg->thread_count > 0) ? cfg->thread_count : 1;
     img = p_open_image_create(capacity, thread_count);
     if (img == NULL) {
-        return NULL;
+        return HT_ERR_OOM;
     }
 
     t = calloc(1, sizeof(*t));
     if (t == NULL) {
         p_open_image_destroy(img);
-        return NULL;
+        return HT_ERR_OOM;
     }
 
     if (pthread_rwlock_init(&t->resize_lock, NULL) != 0) {
         p_open_image_destroy(img);
         free(t);
-        return NULL;
+        return HT_ERR;
     }
 
     if (pthread_mutex_init(&t->retire_mu, NULL) != 0) {
         pthread_rwlock_destroy(&t->resize_lock);
         p_open_image_destroy(img);
         free(t);
-        return NULL;
+        return HT_ERR;
     }
 
     if (p_open_hazards_init(t, thread_count) != 0) {
@@ -312,7 +318,7 @@ void *p_open_addressing_create_impl(
         pthread_rwlock_destroy(&t->resize_lock);
         p_open_image_destroy(img);
         free(t);
-        return NULL;
+        return HT_ERR_OOM;
     }
 
     if (p_open_log_init(&t->cleanup_log, P_OPEN_LOG_INITIAL_CAPACITY) != 0) {
@@ -321,7 +327,7 @@ void *p_open_addressing_create_impl(
         pthread_rwlock_destroy(&t->resize_lock);
         p_open_image_destroy(img);
         free(t);
-        return NULL;
+        return HT_ERR_OOM;
     }
 
     atomic_init(&t->active, img);
@@ -343,7 +349,8 @@ void *p_open_addressing_create_impl(
     p_open_cleanup_stats_init(&t->cleanup_stats);
     p_open_cleanup_state_init(t);
 
-    return t;
+    *out = t;
+    return HT_OK;
 }
 
 const struct ht_vtable *p_open_addressing_vtable(

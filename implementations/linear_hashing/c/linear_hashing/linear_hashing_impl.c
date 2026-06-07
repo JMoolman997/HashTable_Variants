@@ -94,16 +94,20 @@ static const struct ht_vtable LINEAR_HASHING_VTABLE = {
 /* public backend entry points                                               */
 /* ------------------------------------------------------------------------- */
 
-void *linear_hashing_create_impl(
-    const ht_config *cfg
+ht_result linear_hashing_create_impl_ex(
+    const ht_config *cfg,
+    void           **out
 ) {
     linear_hashing_table *t;
     size_t init_buckets;
 
-    if (cfg == NULL) { return NULL; }
+    if (out == NULL) { return HT_ERR_INVALID; }
+    *out = NULL;
+
+    if (cfg == NULL) { return HT_ERR_INVALID; }
 
     t = calloc(1, sizeof(*t));
-    if (t == NULL) { return NULL; }
+    if (t == NULL) { return HT_ERR_OOM; }
 
     init_buckets = (cfg->init_capacity > 0)
         ? cfg->init_capacity
@@ -111,10 +115,15 @@ void *linear_hashing_create_impl(
     ;
     init_buckets = next_pow2(init_buckets);
 
+    if (init_buckets == 0) {
+        free(t);
+        return HT_ERR_INVALID;
+    }
+
     t->buckets = calloc(init_buckets, sizeof(*t->buckets));
     if (t->buckets == NULL) {
         free(t);
-        return NULL;
+        return HT_ERR_OOM;
     }
 
     if (slab_pool_init(
@@ -124,7 +133,7 @@ void *linear_hashing_create_impl(
         ) != 0) {
         free(t->buckets);
         free(t);
-        return NULL;
+        return HT_ERR_OOM;
     }
 
     t->initial_buckets = init_buckets;
@@ -152,7 +161,8 @@ void *linear_hashing_create_impl(
 
     linear_hashing_update_bytes_used(t);
     ht_resize_stats_init(&t->stats, t->collect_stats, t->total_buckets);
-    return t;
+    *out = t;
+    return HT_OK;
 }
 
 const struct ht_vtable *linear_hashing_vtable(

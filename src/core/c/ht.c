@@ -57,10 +57,76 @@ static ht_result ht_create_backend(
     const struct ht_vtable **vt_out
 );
 
+static ht_result ht_config_validate(
+    const ht_config *cfg
+);
+
+static int ht_resize_mode_is_valid(
+    ht_rsz_mode mode
+);
+
+static int ht_defaultable_max_load_is_valid(
+    double value
+);
+
+static int ht_defaultable_min_load_is_valid(
+    double value
+);
+
 static int ht_map_is_invalid(
     const ht_map *map
 ) {
     return (map == NULL || map->vt == NULL || map->impl == NULL);
+}
+
+static int ht_resize_mode_is_valid(
+    ht_rsz_mode mode
+) {
+    return (mode == HT_RESIZE_NONE ||
+            mode == HT_RESIZE_GROW ||
+            mode == HT_RESIZE_GROW_SHRINK);
+}
+
+static int ht_defaultable_max_load_is_valid(
+    double value
+) {
+    return (value == 0.0 || (value == value && value > 0.0 && value <= 1.0));
+}
+
+static int ht_defaultable_min_load_is_valid(
+    double value
+) {
+    return (value == 0.0 || (value == value && value > 0.0 && value < 1.0));
+}
+
+static ht_result ht_config_validate(
+    const ht_config *cfg
+) {
+    if (cfg == NULL) {
+        return HT_ERR_INVALID;
+    }
+
+    if (!ht_resize_mode_is_valid(cfg->rsz_mode)) {
+        return HT_ERR_INVALID;
+    }
+
+    if (cfg->init_capacity != 0 &&
+        cfg->min_capacity > cfg->init_capacity) {
+        return HT_ERR_INVALID;
+    }
+
+    if (!ht_defaultable_max_load_is_valid(cfg->max_load_factor) ||
+        !ht_defaultable_min_load_is_valid(cfg->min_load_factor)) {
+        return HT_ERR_INVALID;
+    }
+
+    if (cfg->max_load_factor > 0.0 &&
+        cfg->min_load_factor > 0.0 &&
+        cfg->min_load_factor >= cfg->max_load_factor) {
+        return HT_ERR_INVALID;
+    }
+
+    return HT_OK;
 }
 
 static ht_result ht_create_backend(
@@ -78,95 +144,86 @@ static ht_result ht_create_backend(
     switch (cfg->impl_kind) {
     case HT_IMPL_OPEN_ADDRESSING:
         *vt_out = open_addressing_vtable();
-        *impl_out = open_addressing_create_impl(cfg);
+        return open_addressing_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_P_OPEN_ADDRESSING:
         *vt_out = p_open_addressing_vtable();
-        *impl_out = p_open_addressing_create_impl(cfg);
+        return p_open_addressing_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_P_SEPARATE_CHAINING:
         *vt_out = p_separate_chaining_vtable();
-        *impl_out = p_separate_chaining_create_impl(cfg);
+        return p_separate_chaining_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_ADV_OPEN_ADDRESSING:
         *vt_out = adv_open_addressing_vtable();
-        *impl_out = adv_open_addressing_create_impl(cfg);
+        return adv_open_addressing_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_SEPARATE_CHAINING:
         *vt_out = separate_chaining_vtable();
-        *impl_out = separate_chaining_create_impl(cfg);
+        return separate_chaining_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_BUCKET_MOD_SEPARATE_CHAINING:
     case HT_IMPL_LINKED_MOD_SEPARATE_CHAINING:
     case HT_IMPL_SEGMENTED_MOD_SEPARATE_CHAINING:
         *vt_out = mod_separate_chaining_vtable();
-        *impl_out = mod_separate_chaining_create_impl(cfg);
+        return mod_separate_chaining_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_HOPSCOTCH:
         *vt_out = hopscotch_vtable();
-        *impl_out = hopscotch_create_impl(cfg);
+        return hopscotch_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_LF_HOPSCOTCH:
         *vt_out = lf_hopscotch_vtable();
-        *impl_out = lf_hopscotch_create_impl(cfg);
+        return lf_hopscotch_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_ROBIN_HOOD:
         *vt_out = robin_hood_vtable();
-        *impl_out = robin_hood_create_impl(cfg);
+        return robin_hood_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_BACKSHIFT:
         *vt_out = backshift_vtable();
-        *impl_out = backshift_create_impl(cfg);
+        return backshift_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_METADATA:
         *vt_out = metadata_vtable();
-        *impl_out = metadata_create_impl(cfg);
+        return metadata_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_SIMD:
         *vt_out = simd_vtable();
-        *impl_out = simd_create_impl(cfg);
+        return simd_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_FINGERPRINT:
         *vt_out = fingerprint_vtable();
-        *impl_out = fingerprint_create_impl(cfg);
+        return fingerprint_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_LINEAR_HASHING:
         *vt_out = linear_hashing_vtable();
-        *impl_out = linear_hashing_create_impl(cfg);
+        return linear_hashing_create_impl_ex(cfg, impl_out);
         break;
 
     case HT_IMPL_ADV_SEPARATE_CHAINING:
         *vt_out = adv_separate_chaining_vtable();
-        *impl_out = adv_separate_chaining_create_impl(cfg);
+        return adv_separate_chaining_create_impl_ex(cfg, impl_out);
         break;
 
     default:
         return HT_ERR_UNSUPPORTED;
     }
 
-    if (*vt_out == NULL) {
-        return HT_ERR_UNSUPPORTED;
-    }
-
-    if (*impl_out == NULL) {
-        *vt_out = NULL;
-        return HT_ERR_OOM;
-    }
-
-    return HT_OK;
+    return HT_ERR_UNSUPPORTED;
 }
 
 ht_config ht_config_default(ht_impl impl) {
@@ -215,6 +272,11 @@ ht_result ht_create_ex(const ht_config *cfg, ht_map **out) {
         return HT_ERR_INVALID;
     }
 
+    rc = ht_config_validate(cfg);
+    if (rc != HT_OK) {
+        return rc;
+    }
+
     map = malloc(sizeof(*map));
     if (map == NULL) {
         return HT_ERR_OOM;
@@ -228,6 +290,10 @@ ht_result ht_create_ex(const ht_config *cfg, ht_map **out) {
     if (rc != HT_OK) {
         free(map);
         return rc;
+    }
+    if (map->impl == NULL || map->vt == NULL) {
+        free(map);
+        return HT_ERR;
     }
 
     *out = map;
@@ -288,38 +354,6 @@ int ht_contains(const ht_map *map, ht_key_t key) {
     ht_val_t value;
 
     return ht_get(map, key, &value) == HT_OK ? 1 : 0;
-}
-
-ht_result ht_upsert(ht_map *map, ht_key_t key, ht_val_t value) {
-    ht_result rc;
-    ht_val_t existing;
-
-    if (ht_map_is_invalid(map)) {
-        return HT_ERR_INVALID;
-    }
-
-    if (map->vt->upsert != NULL) {
-        return map->vt->upsert(map->impl, key, value);
-    }
-
-    if (map->vt->get == NULL || map->vt->insert == NULL || map->vt->remove == NULL) {
-        return HT_ERR_INVALID;
-    }
-
-    rc = map->vt->get(map->impl, key, &existing);
-    if (rc == HT_ERR_NOT_FOUND) {
-        return map->vt->insert(map->impl, key, value);
-    }
-    if (rc != HT_OK) {
-        return rc;
-    }
-
-    rc = map->vt->remove(map->impl, key);
-    if (rc != HT_OK) {
-        return rc;
-    }
-
-    return map->vt->insert(map->impl, key, value);
 }
 
 size_t ht_size(const ht_map *map) {
@@ -387,7 +421,7 @@ const char *ht_impl_name(ht_impl impl) {
     case HT_IMPL_OPEN_ADDRESSING:
         return "open_addressing";
     case HT_IMPL_ROBIN_HOOD:
-        return "robin-hood";
+        return "robin_hood";
     case HT_IMPL_SEPARATE_CHAINING:
         return "separate_chaining";
     case HT_IMPL_HOPSCOTCH:

@@ -19,6 +19,25 @@
 
 typedef struct ht_map ht_map;
 
+/*
+ * Threading contract:
+ *
+ * - `ht_insert`, `ht_get`, `ht_remove`, and `ht_contains` are thread-safe only
+ *   for concurrent backends:
+ *     `HT_IMPL_P_OPEN_ADDRESSING`, `HT_IMPL_P_SEPARATE_CHAINING`, and
+ *     `HT_IMPL_LF_HOPSCOTCH`.
+ * - Non-concurrent backends require caller-provided synchronization whenever a
+ *   table is shared across threads.
+ * - `ht_contains` is a convenience wrapper around `ht_get` and has the same
+ *   consistency semantics as `ht_get`.
+ * - `ht_destroy` must not run while any other thread can access the table.
+ * - `ht_reserve`, `ht_rehash`, `ht_get_stats`, `ht_reset_stats`, `ht_size`,
+ *   `ht_capacity`, and `ht_load_factor` require caller-side quiescence.
+ * - Concurrent benchmark resize behavior is a benchmark/backend capability,
+ *   not a blanket public guarantee that `ht_reserve` or `ht_rehash` may be
+ *   called concurrently with other operations.
+ */
+
 /* --- function prototypes -------------------------------------------------- */
 
 /**
@@ -143,15 +162,6 @@ ht_result ht_remove(
 int ht_contains(
     const ht_map *map,
     ht_key_t     key
-);
-
-/**
- * @brief Insert a new key or update an existing key.
- */
-ht_result ht_upsert(
-    ht_map  *map,
-    ht_key_t key,
-    ht_val_t value
 );
 
 /**

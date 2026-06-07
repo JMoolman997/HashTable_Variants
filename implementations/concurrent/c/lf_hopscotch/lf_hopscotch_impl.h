@@ -133,7 +133,7 @@ typedef struct {
 #endif
 } lf_hopscotch_table;
 
-void *lf_hopscotch_create_impl(const ht_config *cfg);
+ht_result lf_hopscotch_create_impl_ex(const ht_config *cfg, void **out);
 const struct ht_vtable *lf_hopscotch_vtable(void);
 
 int lf_hopscotch_bind_bench_iface(void *ctx, bench_iface *out);

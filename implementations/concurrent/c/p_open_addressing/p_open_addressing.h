@@ -328,8 +328,9 @@ typedef void (*p_open_cleanup_pause_fn)(void *arg);
  * @return Initialized backend state, or `NULL` on invalid input/allocation
  *         failure.
  */
-void *p_open_addressing_create_impl(
-    const ht_config *cfg
+ht_result p_open_addressing_create_impl_ex(
+    const ht_config *cfg,
+    void           **out
 );
 
 /**

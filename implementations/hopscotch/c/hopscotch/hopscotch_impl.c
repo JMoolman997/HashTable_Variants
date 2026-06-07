@@ -298,21 +298,27 @@ static const struct ht_vtable HOPSCOTCH_VTABLE = {
 /* public entry points                                                       */
 /* ------------------------------------------------------------------------- */
 
-void *hopscotch_create_impl(
-    const ht_config *cfg
+ht_result hopscotch_create_impl_ex(
+    const ht_config *cfg,
+    void           **out
 ) {
 
     hopscotch_table *t;
     size_t capacity;
     size_t min_capacity;
 
+    if (out == NULL) {
+        return HT_ERR_INVALID;
+    }
+    *out = NULL;
+
     if (cfg == NULL) {
-        return NULL;
+        return HT_ERR_INVALID;
     }
 
     t = calloc(1, sizeof(*t));
     if (t == NULL) {
-        return NULL;
+        return HT_ERR_OOM;
     }
 
     capacity = (cfg->init_capacity > 0)
@@ -331,7 +337,7 @@ void *hopscotch_create_impl(
 
     if (capacity == 0 || min_capacity == 0) {
         free(t);
-        return NULL;
+        return HT_ERR_INVALID;
     }
 
     capacity = (capacity < min_capacity)
@@ -340,7 +346,7 @@ void *hopscotch_create_impl(
 
     if (hopscotch_alloc_arrays(t, capacity) != HT_OK) {
         free(t);
-        return NULL;
+        return HT_ERR_OOM;
     }
 
     t->min_capacity = min_capacity;
@@ -367,7 +373,8 @@ void *hopscotch_create_impl(
     ht_resize_stats_init(&t->stats, t->collect_stats, capacity);
     HOPSCOTCH_UPDATE_BYTES_USED(t);
     HOPSCOTCH_CHECK_VALID(t);
-    return t;
+    *out = t;
+    return HT_OK;
 }
 
 const struct ht_vtable *hopscotch_vtable(

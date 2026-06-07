@@ -403,8 +403,9 @@ static p_sep_table *p_sep_table_alloc(
     return ptr;
 }
 
-void *p_separate_chaining_create_impl(
-    const ht_config *cfg
+ht_result p_separate_chaining_create_impl_ex(
+    const ht_config *cfg,
+    void           **out
 ) {
     p_sep_table *table;
     size_t capacity;
@@ -412,49 +413,52 @@ void *p_separate_chaining_create_impl(
     size_t stripe_count;
     size_t thread_count;
 
-    if (cfg == NULL) { return NULL; }
+    if (out == NULL) { return HT_ERR_INVALID; }
+    *out = NULL;
+
+    if (cfg == NULL) { return HT_ERR_INVALID; }
 
     capacity = (cfg->init_capacity > 0)
         ? cfg->init_capacity
         : DEFAULT_INITIAL_CAPACITY;
     if (ht_checked_next_pow2(capacity, &capacity) != HT_OK) {
-        return NULL;
+        return HT_ERR_INVALID;
     }
 
     min_capacity = (cfg->min_capacity > 0)
         ? cfg->min_capacity
         : DEFAULT_MIN_CAPACITY;
     if (ht_checked_next_pow2(min_capacity, &min_capacity) != HT_OK) {
-        return NULL;
+        return HT_ERR_INVALID;
     }
 
     if (capacity < min_capacity) { capacity = min_capacity; }
 
     thread_count = (cfg->thread_count > 0) ? cfg->thread_count : 1u;
     stripe_count = p_sep_normalize_stripe_count(capacity, thread_count);
-    if (stripe_count == 0) { return NULL; }
+    if (stripe_count == 0) { return HT_ERR_INVALID; }
     if (min_capacity < stripe_count) { min_capacity = stripe_count; }
     if (capacity < min_capacity) { capacity = min_capacity; }
 
     table = p_sep_table_alloc();
-    if (table == NULL) { return NULL; }
+    if (table == NULL) { return HT_ERR_OOM; }
 
     table->buckets = p_sep_bucket_array_alloc(capacity);
     if (table->buckets == NULL) {
-        goto fail_table;
+        goto fail_table_oom;
     }
 
     table->stripes = p_sep_stripe_array_alloc(stripe_count);
     if (table->stripes == NULL) {
-        goto fail_buckets;
+        goto fail_buckets_oom;
     }
 
     if (p_sep_stripes_init(table->stripes, stripe_count) != 0) {
-        goto fail_stripes;
+        goto fail_stripes_error;
     }
 
     if (pthread_mutex_init(&table->resize_lock, NULL) != 0) {
-        goto fail_stripes_initialized;
+        goto fail_resize_lock_error;
     }
 
     table->capacity = capacity;
@@ -474,7 +478,7 @@ void *p_separate_chaining_create_impl(
             table->min_load_factor,
             table->max_load_factor
         )) {
-        goto fail_stripes_initialized;
+        goto fail_stripes_initialized_invalid;
     }
     table->resize_mode = cfg->rsz_mode;
     table->hash_fn = (cfg->hash_fn != NULL) ? cfg->hash_fn : default_hash;
@@ -493,18 +497,30 @@ void *p_separate_chaining_create_impl(
     );
     p_sep_log_config(table);
 
-    return table;
+    *out = table;
+    return HT_OK;
 
-fail_stripes_initialized:
+fail_stripes_initialized_invalid:
     pthread_mutex_destroy(&table->resize_lock);
     p_sep_stripes_destroy(table->stripes, stripe_count);
-fail_stripes:
     free(table->stripes);
-fail_buckets:
     free(table->buckets);
-fail_table:
     free(table);
-    return NULL;
+    return HT_ERR_INVALID;
+
+fail_resize_lock_error:
+    p_sep_stripes_destroy(table->stripes, stripe_count);
+fail_stripes_error:
+    free(table->stripes);
+    free(table->buckets);
+    free(table);
+    return HT_ERR;
+
+fail_buckets_oom:
+    free(table->buckets);
+fail_table_oom:
+    free(table);
+    return HT_ERR_OOM;
 }
 
 const struct ht_vtable *p_separate_chaining_vtable(

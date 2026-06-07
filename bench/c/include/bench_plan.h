@@ -35,6 +35,7 @@ typedef struct {
     uint64_t        trace_seed;
     bench_capacity_mode capacity_mode;
     bench_resize_mode   resize_mode;
+    bench_stats_mode    stats_mode;
     bench_resize_mode   concurrent_resize_mode;
     bench_keyspace_mode concurrent_keyspace_mode;
     size_t          dataset_size;

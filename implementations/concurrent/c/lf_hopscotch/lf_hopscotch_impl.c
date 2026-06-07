@@ -1478,16 +1478,21 @@ static const struct ht_vtable LF_HOPSCOTCH_VTABLE = {
     .bind_bench_iface = lf_hopscotch_bind_bench_iface
 };
 
-void *
-lf_hopscotch_create_impl(const ht_config *cfg)
+ht_result
+lf_hopscotch_create_impl_ex(const ht_config *cfg, void **out)
 {
     lf_hopscotch_table *table;
     lf_hopscotch_core *core;
     size_t capacity;
     size_t min_capacity;
 
+    if (out == NULL) {
+        return HT_ERR_INVALID;
+    }
+    *out = NULL;
+
     if (cfg == NULL) {
-        return NULL;
+        return HT_ERR_INVALID;
     }
 
     capacity = cfg->init_capacity != 0 ? cfg->init_capacity : LF_HOPSCOTCH_MIN_CAPACITY;
@@ -1495,7 +1500,7 @@ lf_hopscotch_create_impl(const ht_config *cfg)
     capacity = lf_next_pow2(capacity);
     min_capacity = lf_next_pow2(min_capacity);
     if (capacity == 0 || min_capacity == 0) {
-        return NULL;
+        return HT_ERR_INVALID;
     }
     if (capacity < min_capacity) {
         capacity = min_capacity;
@@ -1503,7 +1508,7 @@ lf_hopscotch_create_impl(const ht_config *cfg)
 
     table = calloc(1, sizeof(*table));
     if (table == NULL) {
-        return NULL;
+        return HT_ERR_OOM;
     }
 
     table->min_capacity = LF_MAX(min_capacity, (size_t)LF_HOPSCOTCH_MIN_CAPACITY);
@@ -1529,7 +1534,7 @@ lf_hopscotch_create_impl(const ht_config *cfg)
     core = lf_core_create(capacity);
     if (core == NULL) {
         free(table);
-        return NULL;
+        return HT_ERR_OOM;
     }
     atomic_store_explicit(&table->current, core, memory_order_release);
 
@@ -1541,10 +1546,11 @@ lf_hopscotch_create_impl(const ht_config *cfg)
         !atomic_is_lock_free(&core->buckets[0].value) ||
         !atomic_is_lock_free(&core->size)) {
         lf_hopscotch_destroy_impl(table);
-        return NULL;
+        return HT_ERR_UNSUPPORTED;
     }
 
-    return table;
+    *out = table;
+    return HT_OK;
 }
 
 const struct ht_vtable *

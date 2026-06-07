@@ -5,6 +5,7 @@
 
 #include <stdio.h>
 
+#include "hash_func.h"
 #include "test_registry.h"
 #include "test_runner.h"
 
@@ -23,13 +24,15 @@ int test_stats_and_reset(ht_impl impl, const char *impl_name);
 int test_reserve_and_rehash(ht_impl impl, const char *impl_name);
 int test_config_helpers(ht_impl impl, const char *impl_name);
 int test_create_ex_diagnostics(ht_impl impl, const char *impl_name);
-int test_contains_upsert(ht_impl impl, const char *impl_name);
+int test_contains_helper(ht_impl impl, const char *impl_name);
 int test_name_helpers(ht_impl impl, const char *impl_name);
 int test_full_table_no_resize(ht_impl impl, const char *impl_name);
 int test_reuse_deleted_slot_no_resize(ht_impl impl, const char *impl_name);
 int test_resize_grow_integrity(ht_impl impl, const char *impl_name);
 int test_resize_shrink_integrity(ht_impl impl, const char *impl_name);
 int test_collision_heavy_case(ht_impl impl, const char *impl_name);
+
+static int test_hash_helpers(void);
 
 static const test_case TEST_CASES[] = {
     { "create_destroy", test_create_destroy },
@@ -47,7 +50,7 @@ static const test_case TEST_CASES[] = {
     { "reserve_and_rehash", test_reserve_and_rehash },
     { "config_helpers", test_config_helpers },
     { "create_ex_diagnostics", test_create_ex_diagnostics },
-    { "contains_upsert", test_contains_upsert },
+    { "contains_helper", test_contains_helper },
     { "name_helpers", test_name_helpers },
     { "full_table_no_resize", test_full_table_no_resize },
     { "reuse_deleted_slot_no_resize", test_reuse_deleted_slot_no_resize },
@@ -62,6 +65,10 @@ int main(
     const test_impl_case *impls;
     size_t                impl_count;
 
+    if (test_hash_helpers() != 0) {
+        return 1;
+    }
+
     impls = test_all_impls(&impl_count);
     if (test_run_impl_matrix(
             impls,
@@ -73,5 +80,23 @@ int main(
     }
 
     fprintf(stdout, "All tests passed.\n");
+    return 0;
+}
+
+static int test_hash_helpers(
+    void
+) {
+    const char *crc_input = "123456789";
+
+    if (crc32_hash("", 0) != 0x00000000U) {
+        fprintf(stderr, "[FAIL] crc32 empty input vector\n");
+        return -1;
+    }
+
+    if (crc32_hash(crc_input, 9) != 0xCBF43926U) {
+        fprintf(stderr, "[FAIL] crc32 123456789 vector\n");
+        return -1;
+    }
+
     return 0;
 }

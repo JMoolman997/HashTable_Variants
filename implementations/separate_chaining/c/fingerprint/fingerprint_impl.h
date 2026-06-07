@@ -72,8 +72,9 @@ typedef struct {
 /**
  * @brief Allocate and initialize a fingerprint-accelerated backend instance.
  */
-void *fingerprint_create_impl(
-    const ht_config *cfg
+ht_result fingerprint_create_impl_ex(
+    const ht_config *cfg,
+    void           **out
 );
 
 /**

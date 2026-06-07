@@ -243,22 +243,27 @@ static const struct ht_vtable OPEN_ADDRESSING_VTABLE = {
 /* public backend entry points                                               */
 /* ------------------------------------------------------------------------- */
 
-void *open_addressing_create_impl(
-    const ht_config *cfg)
+ht_result open_addressing_create_impl_ex(
+    const ht_config *cfg,
+    void           **out)
 {
     open_addressing_table *t;
     size_t capacity;
     size_t min_capacity;
 
-    if (cfg == NULL)
-    {
-        return NULL;
+    if (out == NULL) {
+        return HT_ERR_INVALID;
+    }
+    *out = NULL;
+
+    if (cfg == NULL) {
+        return HT_ERR_INVALID;
     }
 
     t = calloc(1, sizeof(*t));
     if (t == NULL)
     {
-        return NULL;
+        return HT_ERR_OOM;
     }
 
     capacity = (cfg->init_capacity > 0)
@@ -271,6 +276,11 @@ void *open_addressing_create_impl(
                        : DEFAULT_MIN_CAPACITY;
     min_capacity = next_pow2(min_capacity);
 
+    if (capacity == 0 || min_capacity == 0) {
+        free(t);
+        return HT_ERR_INVALID;
+    }
+
     if (capacity < min_capacity)
     {
         capacity = min_capacity;
@@ -280,7 +290,7 @@ void *open_addressing_create_impl(
     if (t->slots == NULL)
     {
         free(t);
-        return NULL;
+        return HT_ERR_OOM;
     }
 
     t->capacity = capacity;
@@ -303,7 +313,8 @@ void *open_addressing_create_impl(
 
     UPDATE_BYTES_USED(t);
     ht_resize_stats_init(&t->stats, t->collect_stats, t->capacity);
-    return t;
+    *out = t;
+    return HT_OK;
 }
 
 const struct ht_vtable *open_addressing_vtable(

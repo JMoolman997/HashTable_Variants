@@ -57,6 +57,13 @@ const char *bench_resize_mode_name(
 );
 
 /**
+ * @brief Return the canonical CLI/CSV name for a stats collection mode.
+ */
+const char *bench_stats_mode_name(
+    bench_stats_mode stats_mode
+);
+
+/**
  * @brief Parse a canonical benchmark name.
  */
 int bench_parse_kind(
@@ -94,6 +101,14 @@ int bench_parse_keyspace(
 int bench_parse_resize_mode(
     const char *text,
     bench_resize_mode *out
+);
+
+/**
+ * @brief Parse a canonical stats collection mode.
+ */
+int bench_parse_stats_mode(
+    const char *text,
+    bench_stats_mode *out
 );
 
 #endif /* BENCH_NAMES_H */

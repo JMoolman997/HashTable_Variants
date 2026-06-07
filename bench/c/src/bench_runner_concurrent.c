@@ -349,7 +349,11 @@ static int bench_run_concurrent_ops(
     memset(&bi, 0, sizeof(bi));
     memset(&stats, 0, sizeof(stats));
 
-    if (bench_build_ht_config_from_plan(plan, &cfg, 1) != 0) {
+    if (bench_build_ht_config_from_plan(
+            plan,
+            &cfg,
+            plan->stats_mode == BENCH_STATS_ON
+        ) != 0) {
         return -1;
     }
 

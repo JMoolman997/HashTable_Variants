@@ -64,8 +64,9 @@ typedef struct {
  * @return An initialized backend object on success, or `NULL` if `cfg` is
  *         invalid or allocation fails.
  */
-void *mod_separate_chaining_create_impl(
-    const ht_config *cfg
+ht_result mod_separate_chaining_create_impl_ex(
+    const ht_config *cfg,
+    void           **out
 );
 
 /**

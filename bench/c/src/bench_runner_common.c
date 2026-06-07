@@ -405,7 +405,11 @@ int bench_env_init(
     }
 
     memset(env, 0, sizeof(*env));
-    if (bench_build_ht_config_from_plan(plan, &env->cfg, 1) != 0) {
+    if (bench_build_ht_config_from_plan(
+            plan,
+            &env->cfg,
+            plan->stats_mode == BENCH_STATS_ON
+        ) != 0) {
         return -1;
     }
 
@@ -585,6 +589,7 @@ void bench_fill_result(
     result->spec.target_alpha    = plan->target_alpha;
     result->spec.capacity        = plan->initial_capacity;
     result->spec.resize_mode     = plan->resize_mode;
+    result->spec.stats_mode      = plan->stats_mode;
     result->spec.concurrent_resize_mode =
         plan->concurrent_resize_mode;
     result->spec.prefill_alpha   = plan->prefill_alpha;

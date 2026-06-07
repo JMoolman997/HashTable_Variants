@@ -122,16 +122,20 @@ static const struct ht_vtable ADV_SEPARATE_CHAINING_VTABLE = {
 /* public backend entry points                                               */
 /* ------------------------------------------------------------------------- */
 
-void *adv_separate_chaining_create_impl(
-    const ht_config *cfg
+ht_result adv_separate_chaining_create_impl_ex(
+    const ht_config *cfg,
+    void           **out
 ) {
     adv_separate_chaining_table *t;
     size_t init_capacity;
 
-    if (cfg == NULL) { return NULL; }
+    if (out == NULL) { return HT_ERR_INVALID; }
+    *out = NULL;
+
+    if (cfg == NULL) { return HT_ERR_INVALID; }
 
     t = calloc(1, sizeof(*t));
-    if (t == NULL) { return NULL; }
+    if (t == NULL) { return HT_ERR_OOM; }
 
     init_capacity = (cfg->init_capacity > 0)
         ? cfg->init_capacity
@@ -139,10 +143,15 @@ void *adv_separate_chaining_create_impl(
     ;
     init_capacity = next_pow2(init_capacity);
 
+    if (init_capacity == 0) {
+        free(t);
+        return HT_ERR_INVALID;
+    }
+
     t->buckets = calloc(init_capacity, sizeof(*t->buckets));
     if (t->buckets == NULL) {
         free(t);
-        return NULL;
+        return HT_ERR_OOM;
     }
 
     if (slab_pool_init(
@@ -152,7 +161,7 @@ void *adv_separate_chaining_create_impl(
         ) != 0) {
         free(t->buckets);
         free(t);
-        return NULL;
+        return HT_ERR_OOM;
     }
 
     t->capacity     = init_capacity;
@@ -180,7 +189,8 @@ void *adv_separate_chaining_create_impl(
 
     adv_update_bytes_used(t);
     ht_resize_stats_init(&t->stats, t->collect_stats, t->capacity);
-    return t;
+    *out = t;
+    return HT_OK;
 }
 
 const struct ht_vtable *adv_separate_chaining_vtable(

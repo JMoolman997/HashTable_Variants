@@ -72,8 +72,9 @@ typedef struct {
  * @return An initialized backend object on success, or `NULL` if `cfg` is
  *         invalid or allocation fails.
  */
-void *open_addressing_create_impl(
-    const ht_config *cfg
+ht_result open_addressing_create_impl_ex(
+    const ht_config *cfg,
+    void           **out
 );
 
 /**

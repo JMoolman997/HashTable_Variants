@@ -26,6 +26,7 @@ zig build -Doptimize=ReleaseFast htbench_resize
   --timed-ops 1048576 \
   --warmup-ops 65536 \
   --repetitions 5 \
+  --stats off \
   --csv > results/lookup-hit-open-addressing.csv
 ```
 
@@ -37,6 +38,7 @@ zig build -Doptimize=ReleaseFast htbench_resize
   --dataset-size 1048576 \
   --timed-ops 1048576 \
   --repetitions 5 \
+  --stats off \
   --csv > results/resize-build-adv-open-addressing.csv
 ```
 
@@ -47,14 +49,18 @@ zig build -Doptimize=ReleaseFast htbench_resize
   --impl p_open_addressing \
   --dataset-size 1048576 \
   --timed-ops 1048576 \
-  --threads 8 \
+  --thread-count 8 \
   --repetitions 5 \
+  --stats off \
   --csv > results/concurrent-lookup-p-open-addressing.csv
 ```
 
 ## Measurement Rules
 
 - Prefer `ReleaseFast` for comparative runs.
+- Use `--stats off` for clean timing measurements.
+- Use `--stats on` for diagnostic/probe/memory rows, and report that mode with
+  the result.
 - Use the same dataset size, load factor, keyspace mode, seed, and repetition
   count when comparing implementations.
 - Keep raw CSVs in `results/`; summarize stable conclusions in the relevant

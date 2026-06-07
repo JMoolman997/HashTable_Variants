@@ -69,8 +69,9 @@ typedef struct {
 
 /* --- function prototypes -------------------------------------------------- */
 
-void *linear_hashing_create_impl(
-    const ht_config *cfg
+ht_result linear_hashing_create_impl_ex(
+    const ht_config *cfg,
+    void           **out
 );
 
 const struct ht_vtable *linear_hashing_vtable(

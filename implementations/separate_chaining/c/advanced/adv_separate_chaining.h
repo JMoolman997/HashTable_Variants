@@ -82,8 +82,9 @@ typedef struct {
 
 /* --- function prototypes -------------------------------------------------- */
 
-void *adv_separate_chaining_create_impl(
-    const ht_config *cfg
+ht_result adv_separate_chaining_create_impl_ex(
+    const ht_config *cfg,
+    void           **out
 );
 
 const struct ht_vtable *adv_separate_chaining_vtable(

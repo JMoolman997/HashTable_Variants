@@ -8,7 +8,7 @@ static const test_impl_case TEST_ALL_IMPLS[] = {
     { HT_IMPL_LF_HOPSCOTCH, "lf_hopscotch" },
     { HT_IMPL_ADV_OPEN_ADDRESSING, "adv_open_addressing" },
     { HT_IMPL_BACKSHIFT, "backshift" },
-    { HT_IMPL_ROBIN_HOOD, "robin-hood" },
+    { HT_IMPL_ROBIN_HOOD, "robin_hood" },
     { HT_IMPL_METADATA, "metadata" },
     { HT_IMPL_SIMD, "simd" },
     { HT_IMPL_BUCKET_MOD_SEPARATE_CHAINING, "bucket_mod_separate_chaining" },

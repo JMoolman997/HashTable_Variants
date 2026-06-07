@@ -474,6 +474,35 @@ int test_create_ex_diagnostics(
     TEST_CHECK(rc == HT_ERR_UNSUPPORTED, "unknown impl should be unsupported");
     TEST_CHECK(map == NULL, "ht_create_ex should clear out on unsupported impl");
 
+    cfg = test_make_config(impl, HT_RESIZE_NONE, 16);
+    cfg.rsz_mode = (ht_rsz_mode)9999;
+    map = (ht_map *)1;
+    rc = ht_create_ex(&cfg, &map);
+    TEST_CHECK(rc == HT_ERR_INVALID, "bad resize mode should be invalid");
+    TEST_CHECK(map == NULL, "ht_create_ex should clear out on bad resize mode");
+
+    cfg = test_make_config(impl, HT_RESIZE_NONE, 16);
+    cfg.max_load_factor = 2.0;
+    map = (ht_map *)1;
+    rc = ht_create_ex(&cfg, &map);
+    TEST_CHECK(rc == HT_ERR_INVALID, "bad max load factor should be invalid");
+    TEST_CHECK(map == NULL, "ht_create_ex should clear out on bad max load factor");
+
+    cfg = test_make_config(impl, HT_RESIZE_NONE, 16);
+    cfg.max_load_factor = 0.50;
+    cfg.min_load_factor = 0.50;
+    map = (ht_map *)1;
+    rc = ht_create_ex(&cfg, &map);
+    TEST_CHECK(rc == HT_ERR_INVALID, "min load factor must be below max");
+    TEST_CHECK(map == NULL, "ht_create_ex should clear out on bad load factors");
+
+    cfg = test_make_config(impl, HT_RESIZE_NONE, 16);
+    cfg.min_capacity = 32;
+    map = (ht_map *)1;
+    rc = ht_create_ex(&cfg, &map);
+    TEST_CHECK(rc == HT_ERR_INVALID, "min capacity above init capacity should be invalid");
+    TEST_CHECK(map == NULL, "ht_create_ex should clear out on bad capacity config");
+
     rc = ht_create_ex(&cfg, NULL);
     TEST_CHECK(rc == HT_ERR_INVALID, "NULL output pointer should be invalid");
 
@@ -484,13 +513,12 @@ fail:
     return -1;
 }
 
-int test_contains_upsert(
+int test_contains_helper(
     ht_impl     impl,
     const char *impl_name
 ) {
     ht_config cfg;
     ht_map   *map = NULL;
-    ht_val_t  value;
     ht_result rc;
 
     cfg = test_make_config(impl, HT_RESIZE_NONE, 64);
@@ -500,19 +528,11 @@ int test_contains_upsert(
     TEST_CHECK(ht_contains(NULL, 1) == 0, "NULL map should not contain keys");
     TEST_CHECK(ht_contains(map, 1) == 0, "empty map should not contain key");
 
-    TEST_CHECK(ht_upsert(map, 1, 100) == HT_OK, "upsert insert failed");
-    TEST_CHECK(ht_contains(map, 1) == 1, "upserted key not found");
-    TEST_CHECK(ht_get(map, 1, &value) == HT_OK, "lookup after upsert failed");
-    TEST_CHECK(value == 100, "upsert inserted wrong value");
-
-    TEST_CHECK(ht_upsert(map, 1, 200) == HT_OK, "upsert update failed");
-    TEST_CHECK(ht_size(map) == 1, "upsert update changed size");
-    TEST_CHECK(ht_get(map, 1, &value) == HT_OK, "lookup after update failed");
-    TEST_CHECK(value == 200, "upsert did not update value");
-
-    TEST_CHECK(ht_upsert(map, 2, 300) == HT_OK, "second upsert insert failed");
-    TEST_CHECK(ht_size(map) == 2, "second upsert changed wrong size");
-    TEST_CHECK(ht_contains(map, 2) == 1, "second upserted key not found");
+    TEST_CHECK(ht_insert(map, 1, 100) == HT_OK, "insert failed");
+    TEST_CHECK(ht_contains(map, 1) == 1, "inserted key not found");
+    TEST_CHECK(ht_contains(map, 2) == 0, "missing key should not be found");
+    TEST_CHECK(ht_remove(map, 1) == HT_OK, "remove failed");
+    TEST_CHECK(ht_contains(map, 1) == 0, "removed key still found");
 
     ht_destroy(map);
     return 0;

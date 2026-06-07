@@ -4,6 +4,20 @@ The active code keeps variants that demonstrate a distinct table strategy,
 storage layout, deletion policy, metadata layout, resize model, or concurrency
 model.
 
+## Public API Threading Contract
+
+- `ht_insert`, `ht_get`, `ht_remove`, and `ht_contains` are thread-safe only for
+  `p_open_addressing`, `p_separate_chaining`, and `lf_hopscotch`.
+- Other backends require external synchronization when a table is shared across
+  threads.
+- `ht_contains` follows the same consistency rules as `ht_get`.
+- `ht_destroy` must not run while another thread can access the table.
+- `ht_reserve`, `ht_rehash`, `ht_get_stats`, `ht_reset_stats`, `ht_size`,
+  `ht_capacity`, and `ht_load_factor` require caller-side quiescence.
+- Concurrent resize benchmark behavior is a specific benchmark/backend
+  capability, not a public guarantee that `ht_reserve` or `ht_rehash` can run
+  concurrently with mutations.
+
 ## Open Addressing
 
 - `open_addressing`: baseline linear probing with tombstones and cached hashes.

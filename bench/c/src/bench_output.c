@@ -91,7 +91,7 @@ void bench_output_write_csv_header(
     }
 
     fprintf(stream,
-            "benchmark,impl,hash_fn,hash_seed,"
+            "benchmark,impl,hash_fn,hash_seed,stats_mode,"
             "dataset_size,capacity,target_alpha,initial_size,"
             "workload,warmup_ops,timed_ops,repetition,seed,"
             BENCH_CSV_CORE_RESULT_COLUMNS "\n");
@@ -112,7 +112,7 @@ void bench_output_write_csv_row(
     spec = &result->spec;
 
     fprintf(stream,
-            "%s,%s,%s,%" PRIu64 ","
+            "%s,%s,%s,%" PRIu64 ",%s,"
             "%zu,%zu,%.6f,%zu,"
             "%s,%zu,%zu,%zu,%" PRIu64 ","
             "%" PRIu64 ",%.6f,%.6f,"
@@ -126,6 +126,7 @@ void bench_output_write_csv_row(
             bench_impl_name(spec->impl_kind),
             bench_hash_name(spec->hash_fn),
             spec->hash_seed,
+            bench_stats_mode_name(spec->stats_mode),
             spec->dataset_size,
             spec->capacity,
             spec->target_alpha,
@@ -176,7 +177,7 @@ void bench_output_write_resize_csv_header(
 
     /* Resize rows record both the starting capacity and the post-run capacity. */
     fprintf(stream,
-            "benchmark,impl,hash_fn,hash_seed,"
+            "benchmark,impl,hash_fn,hash_seed,stats_mode,"
             "dataset_size,initial_capacity,capacity,target_alpha,initial_size,"
             "workload,resize_mode,grow_alpha,shrink_alpha,prefill_alpha,"
             "warmup_ops,timed_ops,repetition,seed,"
@@ -200,7 +201,7 @@ void bench_output_write_resize_csv_row(
     spec = &result->core.spec;
 
     fprintf(stream,
-            "%s,%s,%s,%" PRIu64 ","
+            "%s,%s,%s,%" PRIu64 ",%s,"
             "%zu,%zu,%zu,%.6f,%zu,"
             "%s,%s,%.6f,%.6f,%.6f,"
             "%zu,%zu,%zu,%" PRIu64 ","
@@ -218,6 +219,7 @@ void bench_output_write_resize_csv_row(
             bench_impl_name(spec->impl_kind),
             bench_hash_name(spec->hash_fn),
             spec->hash_seed,
+            bench_stats_mode_name(spec->stats_mode),
             spec->dataset_size,
             spec->initial_capacity,
             result->core.final_capacity,
@@ -279,7 +281,7 @@ void bench_output_write_concurrent_csv_header(
     }
 
     fprintf(stream,
-            "benchmark,impl,hash_fn,hash_seed,"
+            "benchmark,impl,hash_fn,hash_seed,stats_mode,"
             "dataset_size,capacity,target_alpha,initial_size,"
             "workload,concurrent_mutation_mode,keyspace_mode,"
             "harness_op_lock,concurrent_resize,"
@@ -304,7 +306,7 @@ void bench_output_write_concurrent_csv_row(
     spec = &result->core.spec;
 
     fprintf(stream,
-            "%s,%s,%s,%" PRIu64 ","
+            "%s,%s,%s,%" PRIu64 ",%s,"
             "%zu,%zu,%.6f,%zu,"
             "%s,%s,%s,%d,%s,%zu,%zu,%zu,%" PRIu64 ","
             "%" PRIu64 ",%.6f,%.6f,"
@@ -319,6 +321,7 @@ void bench_output_write_concurrent_csv_row(
             bench_impl_name(spec->impl_kind),
             bench_hash_name(spec->hash_fn),
             spec->hash_seed,
+            bench_stats_mode_name(spec->stats_mode),
             spec->dataset_size,
             spec->capacity,
             spec->target_alpha,

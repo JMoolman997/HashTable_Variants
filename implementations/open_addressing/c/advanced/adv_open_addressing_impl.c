@@ -112,18 +112,23 @@ static inline uint16_t adv_open_addressing_bitmask_clear_first(uint16_t mask) {
 /* public backend entry points                                               */
 /* ------------------------------------------------------------------------- */
 
-void *adv_open_addressing_create_impl(const ht_config *cfg) {
+ht_result adv_open_addressing_create_impl_ex(const ht_config *cfg, void **out) {
   adv_open_addressing_table *t;
   size_t capacity;
   size_t min_capacity;
 
+  if (out == NULL) {
+    return HT_ERR_INVALID;
+  }
+  *out = NULL;
+
   if (cfg == NULL) {
-    return NULL;
+    return HT_ERR_INVALID;
   }
 
   t = calloc(1, sizeof(*t));
   if (t == NULL) {
-    return NULL;
+    return HT_ERR_OOM;
   }
 
   capacity =
@@ -134,6 +139,11 @@ void *adv_open_addressing_create_impl(const ht_config *cfg) {
       (cfg->min_capacity > 0) ? cfg->min_capacity : DEFAULT_MIN_CAPACITY;
   min_capacity = next_pow2(min_capacity);
 
+  if (capacity == 0 || min_capacity == 0) {
+    free(t);
+    return HT_ERR_INVALID;
+  }
+
   if (capacity < min_capacity) {
     capacity = min_capacity;
   }
@@ -143,7 +153,7 @@ void *adv_open_addressing_create_impl(const ht_config *cfg) {
   t->ctrl = malloc(capacity + ADV_OPEN_ADDRESSING_GROUP_SIZE - 1);
   if (t->ctrl == NULL) {
     free(t);
-    return NULL;
+    return HT_ERR_OOM;
   }
   memset(t->ctrl, ADV_OPEN_ADDRESSING_CTRL_EMPTY,
          capacity + ADV_OPEN_ADDRESSING_GROUP_SIZE - 1);
@@ -152,7 +162,7 @@ void *adv_open_addressing_create_impl(const ht_config *cfg) {
   if (t->hashes == NULL) {
     free(t->ctrl);
     free(t);
-    return NULL;
+    return HT_ERR_OOM;
   }
 
   t->entries = malloc(capacity * sizeof(*t->entries));
@@ -160,7 +170,7 @@ void *adv_open_addressing_create_impl(const ht_config *cfg) {
     free(t->hashes);
     free(t->ctrl);
     free(t);
-    return NULL;
+    return HT_ERR_OOM;
   }
 
   t->capacity = capacity;
@@ -181,7 +191,8 @@ void *adv_open_addressing_create_impl(const ht_config *cfg) {
   adv_open_addressing_update_bytes_used(t);
   ht_resize_stats_init(&t->stats, t->collect_stats, t->capacity);
   adv_open_addressing_sync_ctrl(t);
-  return t;
+  *out = t;
+  return HT_OK;
 }
 
 const struct ht_vtable *adv_open_addressing_vtable(void) {

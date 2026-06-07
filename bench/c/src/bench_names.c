@@ -11,6 +11,7 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "ht.h"
 #include "bench_names.h"
 
 #define BENCH_ARRAY_LEN(array) (sizeof(array) / sizeof((array)[0]))
@@ -37,7 +38,7 @@ static const bench_name_map bench_kind_maps[] = {
 
 static const bench_name_map bench_impl_maps[] = {
     {"open_addressing", HT_IMPL_OPEN_ADDRESSING},
-    {"robin-hood", HT_IMPL_ROBIN_HOOD},
+    {"robin_hood", HT_IMPL_ROBIN_HOOD},
     {"separate_chaining", HT_IMPL_SEPARATE_CHAINING},
     {"hopscotch", HT_IMPL_HOPSCOTCH},
     {"adv_open_addressing", HT_IMPL_ADV_OPEN_ADDRESSING},
@@ -79,6 +80,11 @@ static const bench_name_map bench_resize_mode_maps[] = {
     {"grow-only", BENCH_RESIZE_GROW_ONLY},
     {"grow-shrink", BENCH_RESIZE_GROW_SHRINK},
     {"impl-default", BENCH_RESIZE_IMPL_DEFAULT},
+};
+
+static const bench_name_map bench_stats_mode_maps[] = {
+    {"off", BENCH_STATS_OFF},
+    {"on", BENCH_STATS_ON},
 };
 
 static int bench_lookup_name_map(
@@ -136,11 +142,7 @@ const char *bench_kind_name(
 const char *bench_impl_name(
     ht_impl impl
 ) {
-    return bench_lookup_value_name(
-        (int)impl,
-        bench_impl_maps,
-        BENCH_ARRAY_LEN(bench_impl_maps)
-    );
+    return ht_impl_name(impl);
 }
 
 int bench_impl_is_known(
@@ -184,6 +186,16 @@ const char *bench_resize_mode_name(
         (int)resize_mode,
         bench_resize_mode_maps,
         BENCH_ARRAY_LEN(bench_resize_mode_maps)
+    );
+}
+
+const char *bench_stats_mode_name(
+    bench_stats_mode stats_mode
+) {
+    return bench_lookup_value_name(
+        (int)stats_mode,
+        bench_stats_mode_maps,
+        BENCH_ARRAY_LEN(bench_stats_mode_maps)
     );
 }
 
@@ -299,5 +311,28 @@ int bench_parse_resize_mode(
     }
 
     *out = (bench_resize_mode)value;
+    return 0;
+}
+
+int bench_parse_stats_mode(
+    const char *text,
+    bench_stats_mode *out
+) {
+    int value;
+
+    if (text == NULL || out == NULL) {
+        return -1;
+    }
+
+    if (bench_lookup_name_map(
+            text,
+            bench_stats_mode_maps,
+            BENCH_ARRAY_LEN(bench_stats_mode_maps),
+            &value
+        ) != 0) {
+        return -1;
+    }
+
+    *out = (bench_stats_mode)value;
     return 0;
 }

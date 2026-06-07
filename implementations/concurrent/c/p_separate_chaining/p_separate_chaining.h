@@ -29,8 +29,9 @@ struct ht_vtable;
  * @return An initialized backend object on success, or `NULL` if `cfg` is
  *         invalid or allocation fails.
  */
-void *p_separate_chaining_create_impl(
-    const ht_config *cfg
+ht_result p_separate_chaining_create_impl_ex(
+    const ht_config *cfg,
+    void           **out
 );
 
 /**
