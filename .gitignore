@@ -1,0 +1,172 @@
+# OS-generated files
+.DS_Store
+.DS_Store?
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+.Spotlight-V100/
+.Trashes/
+._*
+
+# Editor and IDE settings
+.idea/
+.vscode/
+.vs/
+*.code-workspace
+*.suo
+*.user
+*.userossc
+*.rsuser
+*.sln.docstates
+*.swp
+*.swo
+*~
+.codex
+Session.vim
+.project
+.cproject
+.settings/
+compile_commands.json
+
+# Logs and runtime files
+*.log
+*.pid
+*.pid.lock
+*.seed
+*.stackdump
+
+# Generic temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.old
+*.save
+
+# Build directories
+build/
+build-*/
+zig-out/
+.zig-cache/
+zig-cache/
+out/
+bin/
+lib/
+lib64/
+dist/
+Debug/
+Release/
+debug/
+release/
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.idx
+*.ilg
+*.ind
+*.lof
+*.log
+*.lot
+*.nav
+*.run.xml
+*.snm
+*.synctex.gz
+*.toc
+*.xdv
+
+# Autotools / configure
+autom4te.cache/
+aclocal.m4
+ar-lib
+compile
+config.guess
+config.log
+config.status
+config.sub
+configure
+depcomp
+install-sh
+libtool
+ltmain.sh
+Makefile.in
+missing
+m4/
+
+# Make and generated dependency files
+makedep*
+*.d
+
+# Binaries and libraries
+*.a
+*.la
+*.lai
+*.lib
+*.lo
+*.o
+*.obj
+*.so
+*.so.*
+*.dll
+*.dylib
+*.exe
+*.exp
+*.idb
+*.ilk
+*.pdb
+*.out
+*.app
+
+# Linker maps and debug symbol bundles
+*.map
+*.dSYM/
+
+# Coverage and profiling
+*.gcda
+*.gcno
+*.gcov
+*.prof
+*.profraw
+*.profdata
+*.gmon
+coverage/
+lcov.info
+
+# Sanitizer and crash artifacts
+*.asan
+*.tsan
+*.ubsan
+vgcore.*
+
+# Test and benchmark outputs
+test-results/
+benchmark-results/
+/htbench
+
+# Archives and packaged artifacts
+*.7z
+*.bz2
+*.gz
+*.rar
+*.tar
+*.tgz
+*.xz
+*.zip
+
+# Python cache
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+*.sync-conflict-*
