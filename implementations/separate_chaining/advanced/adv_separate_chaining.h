@@ -27,9 +27,9 @@ struct ht_vtable;
 #define ADV_SEPARATE_CHAINING_DEFAULT_MAX_LOAD         1.50
 #define ADV_SEPARATE_CHAINING_DEFAULT_MIN_LOAD         0.25
 
-/* 
- * We use 3 entries per bucket to stay within 64 bytes (one cache line).
- * 3 * (8+8+1) + 1 + 8 = 60 bytes.
+/*
+ * Field order keeps the hot root bucket in one cache line and overflow
+ * segments in two cache lines on the supported 64-bit key/value layout.
  */
 #define ADV_BUCKET_CAPACITY 3u
 
@@ -40,23 +40,29 @@ struct ht_vtable;
  * @brief An overflow segment in an advanced bucket chain.
  */
 typedef struct adv_segment {
-    uint8_t  tags[ADV_SEGMENT_CAPACITY]; /**< Hash fingerprints. */
+    struct adv_segment *next; /**< Next overflow segment. */
     ht_key_t keys[ADV_SEGMENT_CAPACITY]; /**< Stored keys. */
     ht_val_t values[ADV_SEGMENT_CAPACITY]; /**< Stored values. */
+    uint8_t  tags[ADV_SEGMENT_CAPACITY]; /**< Hash fingerprints. */
     uint8_t  used; /**< Number of occupied entries in this segment. */
-    struct adv_segment *next; /**< Next overflow segment. */
 } adv_segment;
 
 /**
  * @brief A bucket in the main table, containing the first few entries.
  */
 typedef struct {
-    uint8_t  tags[ADV_BUCKET_CAPACITY]; /**< Hash fingerprints. */
+    adv_segment *next; /**< First overflow segment. */
     ht_key_t keys[ADV_BUCKET_CAPACITY]; /**< Stored keys. */
     ht_val_t values[ADV_BUCKET_CAPACITY]; /**< Stored values. */
+    uint8_t  tags[ADV_BUCKET_CAPACITY]; /**< Hash fingerprints. */
     uint8_t  used; /**< Number of occupied inline entries. */
-    adv_segment *next; /**< First overflow segment. */
 } adv_bucket;
+
+_Static_assert(sizeof(adv_bucket) == 64,
+               "adv_bucket should fit in one cache line");
+
+_Static_assert(sizeof(adv_segment) == 128,
+               "adv_segment should fit in two cache lines");
 
 /**
  * @brief Private state for the advanced separate-chaining backend.

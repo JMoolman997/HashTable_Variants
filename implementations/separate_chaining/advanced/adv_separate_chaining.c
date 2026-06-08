@@ -234,7 +234,9 @@ static ht_result adv_separate_chaining_insert_impl(
     const uint64_t hash = t->hash_fn(key, t->hash_seed);
     size_t bucket_idx = HT_INDEX_FOR_U64(hash, t->capacity);
     const uint8_t tag = ht_hash_tag_u8(hash);
+    size_t new_capacity;
     uint64_t probe_len = 1;
+    ht_result rc;
 
     adv_bucket *b = &t->buckets[bucket_idx];
     
@@ -271,9 +273,17 @@ static ht_result adv_separate_chaining_insert_impl(
     }
 
     if (t->resize_mode != HT_RESIZE_NONE && HT_SHOULD_GROW_COUNT(t, size)) {
-        ht_result rc = adv_resize(t, t->capacity * 2);
+        rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
         if (rc != HT_OK) {
             HT_RECORD_INSERT_FAILURE(t);
+            HT_UPDATE_PROBE_STATS(t, probe_len);
+            return rc;
+        }
+
+        rc = adv_resize(t, new_capacity);
+        if (rc != HT_OK) {
+            HT_RECORD_INSERT_FAILURE(t);
+            HT_UPDATE_PROBE_STATS(t, probe_len);
             return rc;
         }
         bucket_idx = HT_INDEX_FOR_U64(hash, t->capacity);

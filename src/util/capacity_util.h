@@ -53,7 +53,7 @@ static inline ht_result ht_grow_capacity_pow2(size_t capacity, size_t *out) {
     if (out == NULL) {
         return HT_ERR_INVALID;
     }
-    if (capacity > SIZE_MAX / 2u) {
+    if (capacity == 0u || capacity > SIZE_MAX / 2u) {
         return HT_ERR_OOM;
     }
 

@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "backend_config.h"
 #include "lf_hopscotch_impl.h"
 
 #if defined(__has_include)
@@ -1486,8 +1487,10 @@ lf_hopscotch_create_impl_ex(const ht_config *cfg, void **out)
 {
     lf_hopscotch_table *table;
     lf_hopscotch_core *core;
+    ht_backend_config resolved;
     size_t capacity;
     size_t min_capacity;
+    ht_result rc;
 
     if (out == NULL) {
         return HT_ERR_INVALID;
@@ -1498,16 +1501,24 @@ lf_hopscotch_create_impl_ex(const ht_config *cfg, void **out)
         return HT_ERR_INVALID;
     }
 
-    capacity = cfg->init_capacity != 0 ? cfg->init_capacity : LF_HOPSCOTCH_MIN_CAPACITY;
-    min_capacity = cfg->min_capacity != 0 ? cfg->min_capacity : LF_HOPSCOTCH_MIN_CAPACITY;
-    capacity = lf_next_pow2(capacity);
-    min_capacity = lf_next_pow2(min_capacity);
-    if (capacity == 0 || min_capacity == 0) {
-        return HT_ERR_INVALID;
+    rc = ht_backend_config_resolve(
+        cfg,
+        LF_HOPSCOTCH_MIN_CAPACITY,
+        LF_HOPSCOTCH_MIN_CAPACITY,
+        0.90,
+        0.0,
+        &resolved
+    );
+    if (rc != HT_OK) {
+        return rc;
     }
-    if (capacity < min_capacity) {
-        capacity = min_capacity;
+    rc = ht_backend_config_validate_open_addressing_load(&resolved, 0);
+    if (rc != HT_OK) {
+        return rc;
     }
+
+    capacity = resolved.capacity;
+    min_capacity = resolved.min_capacity;
 
     table = calloc(1, sizeof(*table));
     if (table == NULL) {
@@ -1515,15 +1526,12 @@ lf_hopscotch_create_impl_ex(const ht_config *cfg, void **out)
     }
 
     table->min_capacity = LF_MAX(min_capacity, (size_t)LF_HOPSCOTCH_MIN_CAPACITY);
-    table->max_load_factor = cfg->max_load_factor > 0.0 ? cfg->max_load_factor : 0.90;
-    if (table->max_load_factor <= 0.0 || table->max_load_factor > 0.99) {
-        table->max_load_factor = 0.90;
-    }
-    table->min_load_factor = cfg->min_load_factor;
-    table->resize_mode = cfg->rsz_mode;
+    table->max_load_factor = resolved.max_load_factor;
+    table->min_load_factor = resolved.min_load_factor;
+    table->resize_mode = resolved.resize_mode;
     table->hash_fn = cfg->hash_fn != NULL ? cfg->hash_fn : lf_default_hash;
-    table->hash_seed = cfg->hash_seed;
-    table->collect_stats = cfg->collect_stats;
+    table->hash_seed = resolved.hash_seed;
+    table->collect_stats = resolved.collect_stats;
 
     atomic_init(&table->current, NULL);
     atomic_init(&table->overflow_head, NULL);

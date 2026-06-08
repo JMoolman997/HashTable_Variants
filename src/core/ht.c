@@ -17,8 +17,10 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
+#include <math.h>
 #include <stdlib.h>
 
+#include "backend_config.h"
 #include "ht.h"
 #include "ht_internal.h"
 #include "ht_registry.h"
@@ -41,16 +43,20 @@ static ht_result ht_config_validate(
     const ht_config *cfg
 );
 
-static int ht_resize_mode_is_valid(
-    ht_rsz_mode mode
-);
-
 static int ht_defaultable_max_load_is_valid(
     double value
 );
 
 static int ht_defaultable_min_load_is_valid(
     double value
+);
+
+static int ht_impl_is_open_addressing_family(
+    ht_impl impl
+);
+
+static int ht_impl_allows_full_load(
+    ht_impl impl
 );
 
 static int ht_map_is_invalid(
@@ -59,24 +65,37 @@ static int ht_map_is_invalid(
     return (map == NULL || map->vt == NULL || map->impl == NULL);
 }
 
-static int ht_resize_mode_is_valid(
-    ht_rsz_mode mode
-) {
-    return (mode == HT_RESIZE_NONE ||
-            mode == HT_RESIZE_GROW ||
-            mode == HT_RESIZE_GROW_SHRINK);
-}
-
 static int ht_defaultable_max_load_is_valid(
     double value
 ) {
-    return (value == 0.0 || (value == value && value > 0.0 && value <= 1.0));
+    return value == 0.0 || (isfinite(value) && value > 0.0);
 }
 
 static int ht_defaultable_min_load_is_valid(
     double value
 ) {
-    return (value == 0.0 || (value == value && value > 0.0 && value < 1.0));
+    return value == 0.0 || (isfinite(value) && value >= 0.0);
+}
+
+static int ht_impl_is_open_addressing_family(
+    ht_impl impl
+) {
+    return impl == HT_IMPL_OPEN_ADDRESSING ||
+           impl == HT_IMPL_ROBIN_HOOD ||
+           impl == HT_IMPL_HOPSCOTCH ||
+           impl == HT_IMPL_ADV_OPEN_ADDRESSING ||
+           impl == HT_IMPL_P_OPEN_ADDRESSING ||
+           impl == HT_IMPL_BACKSHIFT ||
+           impl == HT_IMPL_METADATA ||
+           impl == HT_IMPL_SIMD ||
+           impl == HT_IMPL_LF_HOPSCOTCH;
+}
+
+static int ht_impl_allows_full_load(
+    ht_impl impl
+) {
+    return impl == HT_IMPL_ADV_OPEN_ADDRESSING ||
+           impl == HT_IMPL_BACKSHIFT;
 }
 
 static ht_result ht_config_validate(
@@ -103,6 +122,13 @@ static ht_result ht_config_validate(
     if (cfg->max_load_factor > 0.0 &&
         cfg->min_load_factor > 0.0 &&
         cfg->min_load_factor >= cfg->max_load_factor) {
+        return HT_ERR_INVALID;
+    }
+    if (cfg->max_load_factor > 0.0 &&
+        ht_impl_is_open_addressing_family(cfg->impl_kind) &&
+        (cfg->max_load_factor > 1.0 ||
+         (!ht_impl_allows_full_load(cfg->impl_kind) &&
+          cfg->max_load_factor >= 1.0))) {
         return HT_ERR_INVALID;
     }
 

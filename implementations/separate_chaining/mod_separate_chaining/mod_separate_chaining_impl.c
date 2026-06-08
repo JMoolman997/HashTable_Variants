@@ -371,8 +371,12 @@ static ht_result mod_separate_chaining_insert_impl(
     mod_separate_chaining_table *t = impl;
     uint64_t hash;
     size_t bucket;
-    uint64_t probe_len = 1;
+    size_t new_capacity;
+    uint64_t probe_len = 0;
+    uint64_t insert_probe_len;
     ht_val_t existing_value;
+    int needs_grow;
+    int would_exceed_fixed;
     ht_result rc;
 
     if (t == NULL) {
@@ -383,52 +387,73 @@ static ht_result mod_separate_chaining_insert_impl(
 
     hash = t->hash_fn(key, t->hash_seed);
     bucket = HT_INDEX_FOR_U64(hash, t->capacity);
-    rc = t->bucket_ops->get(
-        t->bucket_ctx,
-        t->buckets,
-        bucket,
-        key,
-        &existing_value,
-        &probe_len
-    );
-    if (rc == HT_OK) {
-        HT_UPDATE_PROBE_STATS(t, probe_len);
-        HT_RECORD_INSERT_FAILURE(t);
-        return HT_ERR_EXISTS;
-    }
+    needs_grow =
+        t->resize_mode != HT_RESIZE_NONE &&
+        HT_SHOULD_GROW_COUNT(t, size);
+    would_exceed_fixed =
+        t->resize_mode == HT_RESIZE_NONE &&
+        (double)(t->size + 1) >
+        (double)t->capacity * t->max_load_factor;
 
-    if (t->resize_mode != HT_RESIZE_NONE &&
-        HT_SHOULD_GROW_COUNT(t, size)) {
-        rc = mod_separate_chaining_resize(t, t->capacity * 2);
-        if (rc != HT_OK) {
+    if (needs_grow || would_exceed_fixed) {
+        rc = t->bucket_ops->get(
+            t->bucket_ctx,
+            t->buckets,
+            bucket,
+            key,
+            &existing_value,
+            &probe_len
+        );
+        if (rc == HT_OK) {
+            HT_UPDATE_PROBE_STATS(t, probe_len);
+            HT_RECORD_INSERT_FAILURE(t);
+            return HT_ERR_EXISTS;
+        }
+        if (rc != HT_ERR_NOT_FOUND) {
+            HT_UPDATE_PROBE_STATS(t, probe_len);
             HT_RECORD_INSERT_FAILURE(t);
             return rc;
         }
+    }
+
+    if (needs_grow) {
+        rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
+        if (rc != HT_OK) {
+            HT_RECORD_INSERT_FAILURE(t);
+            HT_UPDATE_PROBE_STATS(t, probe_len);
+            return rc;
+        }
+
+        rc = mod_separate_chaining_resize(t, new_capacity);
+        if (rc != HT_OK) {
+            HT_RECORD_INSERT_FAILURE(t);
+            HT_UPDATE_PROBE_STATS(t, probe_len);
+            return rc;
+        }
         bucket = HT_INDEX_FOR_U64(hash, t->capacity);
-    } else if (t->resize_mode == HT_RESIZE_NONE &&
-               (double)(t->size + 1) >
-               (double)t->capacity * t->max_load_factor) {
+    } else if (would_exceed_fixed) {
         HT_UPDATE_PROBE_STATS(t, probe_len);
         HT_RECORD_INSERT_FAILURE(t);
         return HT_ERR_FULL;
     }
 
-    rc = t->bucket_ops->insert_absent(
+    insert_probe_len = 1;
+    rc = t->bucket_ops->insert(
         t->bucket_ctx,
         t->buckets,
         bucket,
         key,
         value,
-        NULL
+        &insert_probe_len
     );
     if (rc != HT_OK) {
         HT_RECORD_INSERT_FAILURE(t);
-        HT_UPDATE_PROBE_STATS(t, probe_len);
+        HT_UPDATE_PROBE_STATS(t, probe_len + insert_probe_len);
         return rc;
     }
 
     t->size++;
-    HT_UPDATE_PROBE_STATS(t, probe_len);
+    HT_UPDATE_PROBE_STATS(t, probe_len + insert_probe_len);
     mod_separate_chaining_update_bytes_used(t);
 
     return HT_OK;

@@ -351,6 +351,7 @@ static ht_result separate_chaining_insert_impl(
     separate_chaining_node *node;
     uint64_t hash;
     size_t bucket;
+    size_t new_capacity;
     uint64_t probe_len;
     ht_result rc;
 
@@ -375,12 +376,17 @@ static ht_result separate_chaining_insert_impl(
 
     if (t->resize_mode != HT_RESIZE_NONE &&
         HT_SHOULD_GROW_COUNT(t, size)) {
-        rc = separate_chaining_resize(
-            t,
-            t->capacity * 2
-        );
+        rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
         if (rc != HT_OK) {
             HT_RECORD_INSERT_FAILURE(t);
+            HT_UPDATE_PROBE_STATS(t, probe_len);
+            return rc;
+        }
+
+        rc = separate_chaining_resize(t, new_capacity);
+        if (rc != HT_OK) {
+            HT_RECORD_INSERT_FAILURE(t);
+            HT_UPDATE_PROBE_STATS(t, probe_len);
             return rc;
         }
         bucket = HT_INDEX_FOR_U64(hash, t->capacity);

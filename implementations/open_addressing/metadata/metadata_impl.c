@@ -92,6 +92,10 @@ ht_result metadata_create_impl_ex(const ht_config *cfg, void **out) {
   if (rc != HT_OK) {
     return rc;
   }
+  rc = ht_backend_config_validate_open_addressing_load(&resolved, 0);
+  if (rc != HT_OK) {
+    return rc;
+  }
 
   t = calloc(1, sizeof(*t));
   if (t == NULL) {

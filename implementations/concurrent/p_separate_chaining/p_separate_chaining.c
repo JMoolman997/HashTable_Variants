@@ -14,7 +14,6 @@
  */
 
 #include <pthread.h>
-#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
@@ -272,7 +271,6 @@ static int p_sep_bind_bench_iface_flags_impl(
 
 /* --- helpers ------------------------------------------------------------- */
 
-static int p_sep_valid_load_factors(double min_load, double max_load);
 static void p_sep_update_stripe_mapping(p_sep_table *table);
 static void p_sep_update_resize_limits(p_sep_table *table);
 static void p_sep_log_config(const p_sep_table *table);
@@ -413,33 +411,33 @@ ht_result p_separate_chaining_create_impl_ex(
     void           **out
 ) {
     p_sep_table *table;
+    ht_backend_config resolved;
     size_t capacity;
     size_t min_capacity;
     size_t stripe_count;
     size_t thread_count;
+    ht_result rc;
 
     if (out == NULL) { return HT_ERR_INVALID; }
     *out = NULL;
 
     if (cfg == NULL) { return HT_ERR_INVALID; }
 
-    capacity = (cfg->init_capacity > 0)
-        ? cfg->init_capacity
-        : DEFAULT_INITIAL_CAPACITY;
-    if (ht_checked_next_pow2(capacity, &capacity) != HT_OK) {
-        return HT_ERR_INVALID;
+    rc = ht_backend_config_resolve(
+        cfg,
+        DEFAULT_INITIAL_CAPACITY,
+        DEFAULT_MIN_CAPACITY,
+        P_SEP_DEFAULT_MAX_LOAD,
+        P_SEP_DEFAULT_MIN_LOAD,
+        &resolved
+    );
+    if (rc != HT_OK) {
+        return rc;
     }
 
-    min_capacity = (cfg->min_capacity > 0)
-        ? cfg->min_capacity
-        : DEFAULT_MIN_CAPACITY;
-    if (ht_checked_next_pow2(min_capacity, &min_capacity) != HT_OK) {
-        return HT_ERR_INVALID;
-    }
-
-    if (capacity < min_capacity) { capacity = min_capacity; }
-
-    thread_count = (cfg->thread_count > 0) ? cfg->thread_count : 1u;
+    capacity = resolved.capacity;
+    min_capacity = resolved.min_capacity;
+    thread_count = resolved.thread_count;
     stripe_count = p_sep_normalize_stripe_count(capacity, thread_count);
     if (stripe_count == 0) { return HT_ERR_INVALID; }
     if (min_capacity < stripe_count) { min_capacity = stripe_count; }
@@ -473,23 +471,13 @@ ht_result p_separate_chaining_create_impl_ex(
     table->stripe_count = stripe_count;
     table->stripe_mask = stripe_count - 1u;
     p_sep_update_stripe_mapping(table);
-    table->max_load_factor = (cfg->max_load_factor == 0.0)
-        ? P_SEP_DEFAULT_MAX_LOAD
-        : cfg->max_load_factor;
-    table->min_load_factor = (cfg->min_load_factor == 0.0)
-        ? P_SEP_DEFAULT_MIN_LOAD
-        : cfg->min_load_factor;
-    if (!p_sep_valid_load_factors(
-            table->min_load_factor,
-            table->max_load_factor
-        )) {
-        goto fail_stripes_initialized_invalid;
-    }
-    table->resize_mode = cfg->rsz_mode;
-    table->hash_fn = (cfg->hash_fn != NULL) ? cfg->hash_fn : default_hash;
-    table->hash_seed = cfg->hash_seed;
-    table->collect_stats = cfg->collect_stats;
-    table->collect_op_stats = cfg->collect_stats;
+    table->max_load_factor = resolved.max_load_factor;
+    table->min_load_factor = resolved.min_load_factor;
+    table->resize_mode = resolved.resize_mode;
+    table->hash_fn = resolved.hash_fn;
+    table->hash_seed = resolved.hash_seed;
+    table->collect_stats = resolved.collect_stats;
+    table->collect_op_stats = resolved.collect_stats;
     atomic_init(&table->live_size.value, 0);
     atomic_init(&table->delete_debt.value, 0);
     atomic_init(&table->grow_entry_limit, 0);
@@ -504,14 +492,6 @@ ht_result p_separate_chaining_create_impl_ex(
 
     *out = table;
     return HT_OK;
-
-fail_stripes_initialized_invalid:
-    pthread_mutex_destroy(&table->resize_lock);
-    p_sep_stripes_destroy(table->stripes, stripe_count);
-    free(table->stripes);
-    free(table->buckets);
-    free(table);
-    return HT_ERR_INVALID;
 
 fail_resize_lock_error:
     p_sep_stripes_destroy(table->stripes, stripe_count);
@@ -1013,17 +993,6 @@ static int p_sep_bind_bench_iface_flags_impl(
         : p_sep_get_impl;
     out->remove = p_sep_remove_impl;
     return HT_OK;
-}
-
-static int p_sep_valid_load_factors(
-    double min_load,
-    double max_load
-) {
-    return isfinite(min_load) &&
-           isfinite(max_load) &&
-           min_load >= 0.0 &&
-           max_load > 0.0 &&
-           min_load < max_load;
 }
 
 static void p_sep_update_stripe_mapping(
@@ -1775,9 +1744,14 @@ static ht_result p_sep_maybe_resize(
     if ((force_grow ||
          (double)entry_count > (double)capacity * table->max_load_factor) &&
         capacity < table->max_capacity) {
-        target = (capacity <= table->max_capacity / 2u)
-            ? capacity * 2u
-            : table->max_capacity;
+        if (capacity <= table->max_capacity / 2u) {
+            rc = ht_grow_capacity_pow2(capacity, &target);
+            if (rc != HT_OK) {
+                goto unlock;
+            }
+        } else {
+            target = table->max_capacity;
+        }
     } else if (table->resize_mode == HT_RESIZE_GROW_SHRINK &&
                capacity > table->min_capacity &&
                p_sep_deletes_since_resize_locked(table) > entry_count / 2u &&
@@ -1796,6 +1770,7 @@ static ht_result p_sep_maybe_resize(
         rc = p_sep_resize_locked(table, target);
     }
 
+unlock:
     p_sep_unlock_all_stripes(table);
     pthread_mutex_unlock(&table->resize_lock);
     return rc;

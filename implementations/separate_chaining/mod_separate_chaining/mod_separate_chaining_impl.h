@@ -35,7 +35,7 @@ typedef struct mod_separate_chaining_bucket_ops {
     void (*array_release)(void *buckets);
     void (*array_destroy)(void *ctx, void *buckets, size_t capacity);
 
-    ht_result (*insert_absent)(
+    ht_result (*insert)(
         void *ctx,
         void *buckets,
         size_t bucket_index,

@@ -40,4 +40,27 @@ ht_result ht_backend_config_resolve(
     ht_backend_config *out
 );
 
+static inline int ht_resize_mode_is_valid(
+    ht_rsz_mode mode
+) {
+    return mode == HT_RESIZE_NONE ||
+           mode == HT_RESIZE_GROW ||
+           mode == HT_RESIZE_GROW_SHRINK;
+}
+
+static inline ht_result ht_backend_config_validate_open_addressing_load(
+    const ht_backend_config *cfg,
+    int allow_full_load
+) {
+    if (cfg == NULL) {
+        return HT_ERR_INVALID;
+    }
+    if (cfg->max_load_factor > 1.0 ||
+        (!allow_full_load && cfg->max_load_factor >= 1.0)) {
+        return HT_ERR_INVALID;
+    }
+
+    return HT_OK;
+}
+
 #endif /* HT_UTIL_BACKEND_CONFIG_H */

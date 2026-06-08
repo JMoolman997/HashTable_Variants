@@ -290,6 +290,10 @@ ht_result hopscotch_create_impl_ex(
     if (rc != HT_OK) {
         return rc;
     }
+    rc = ht_backend_config_validate_open_addressing_load(&resolved, 0);
+    if (rc != HT_OK) {
+        return rc;
+    }
 
     t = calloc(1, sizeof(*t));
     if (t == NULL) {
@@ -431,12 +435,13 @@ static ht_result hopscotch_insert_impl(
     if (HOPSCOTCH_UNLIKELY(
             t->resize_mode != HT_RESIZE_NONE &&
             HT_SHOULD_GROW_COUNT(t, size))) {
-        if (HOPSCOTCH_UNLIKELY(t->capacity > SIZE_MAX / 2)) {
+        result = ht_grow_capacity_pow2(t->capacity, &next_capacity);
+        if (HOPSCOTCH_UNLIKELY(result != HT_OK)) {
             HT_RECORD_INSERT_FAILURE(t);
-            return HT_ERR_FULL;
+            return result;
         }
 
-        result = hopscotch_resize(t, t->capacity * 2);
+        result = hopscotch_resize(t, next_capacity);
         if (HOPSCOTCH_UNLIKELY(result != HT_OK)) {
             HT_RECORD_INSERT_FAILURE(t);
             return result;
@@ -459,7 +464,7 @@ static ht_result hopscotch_insert_impl(
 
         if (HOPSCOTCH_UNLIKELY(
                 t->resize_mode == HT_RESIZE_NONE ||
-                t->capacity > SIZE_MAX / 2)) {
+                ht_grow_capacity_pow2(t->capacity, &next_capacity) != HT_OK)) {
             if (t->resize_mode == HT_RESIZE_NONE) {
                 result = hopscotch_overflow_insert(t, hash, key, value);
                 if (result == HT_OK) {
@@ -472,7 +477,6 @@ static ht_result hopscotch_insert_impl(
             return (result == HT_ERR_NOT_FOUND) ? HT_ERR_FULL : result;
         }
 
-        next_capacity = t->capacity * 2;
         result = hopscotch_resize(t, next_capacity);
         if (HOPSCOTCH_UNLIKELY(result != HT_OK)) {
             HT_RECORD_INSERT_FAILURE(t);
@@ -1224,8 +1228,16 @@ static ht_result hopscotch_overflow_insert(
 
     if (t->overflow_size == t->overflow_capacity) {
         new_capacity = (t->overflow_capacity == 0)
-            ? 8u : t->overflow_capacity * 2u
+            ? 8u : 0u
         ;
+        if (t->overflow_capacity != 0 &&
+            ht_checked_mul_size(
+                t->overflow_capacity,
+                2u,
+                &new_capacity
+            ) != HT_OK) {
+            return HT_ERR_FULL;
+        }
 
         if (new_capacity < t->overflow_capacity ||
             new_capacity > SIZE_MAX / sizeof(*new_overflow)) {

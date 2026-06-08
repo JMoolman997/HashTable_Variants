@@ -184,6 +184,7 @@ static ht_result fingerprint_insert_impl(
     fingerprint_segment *seg;
     uint64_t hash, probe_len = 1;
     size_t bucket;
+    size_t new_capacity;
     uint8_t tag;
     ht_result rc;
 
@@ -208,9 +209,17 @@ static ht_result fingerprint_insert_impl(
     }
 
     if (t->resize_mode != HT_RESIZE_NONE && HT_SHOULD_GROW_COUNT(t, size)) {
-        rc = fingerprint_resize(t, t->capacity * 2);
+        rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
         if (rc != HT_OK) {
             HT_RECORD_INSERT_FAILURE(t);
+            HT_UPDATE_PROBE_STATS(t, probe_len);
+            return rc;
+        }
+
+        rc = fingerprint_resize(t, new_capacity);
+        if (rc != HT_OK) {
+            HT_RECORD_INSERT_FAILURE(t);
+            HT_UPDATE_PROBE_STATS(t, probe_len);
             return rc;
         }
         bucket = HT_INDEX_FOR_U64(hash, t->capacity);

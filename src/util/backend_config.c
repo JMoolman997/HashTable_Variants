@@ -5,6 +5,8 @@
  * @date    2026-06-07
  */
 
+#include <math.h>
+
 #include "backend_config.h"
 
 #include "capacity_util.h"
@@ -23,6 +25,16 @@ ht_result ht_backend_config_resolve(
     ht_result rc;
 
     if (cfg == NULL || out == NULL) {
+        return HT_ERR_INVALID;
+    }
+
+    if (!ht_resize_mode_is_valid(cfg->rsz_mode)) {
+        return HT_ERR_INVALID;
+    }
+    if (!isfinite(cfg->max_load_factor) ||
+        !isfinite(cfg->min_load_factor) ||
+        cfg->max_load_factor < 0.0 ||
+        cfg->min_load_factor < 0.0) {
         return HT_ERR_INVALID;
     }
 
@@ -57,8 +69,16 @@ ht_result ht_backend_config_resolve(
     out->resize_mode = cfg->rsz_mode;
     out->hash_fn = (cfg->hash_fn != NULL) ? cfg->hash_fn : default_hash;
     out->hash_seed = cfg->hash_seed;
-    out->thread_count = cfg->thread_count;
+    out->thread_count = (cfg->thread_count > 0u) ? cfg->thread_count : 1u;
     out->collect_stats = cfg->collect_stats;
+
+    if (!isfinite(out->max_load_factor) ||
+        !isfinite(out->min_load_factor) ||
+        out->max_load_factor <= 0.0 ||
+        out->min_load_factor < 0.0 ||
+        out->min_load_factor >= out->max_load_factor) {
+        return HT_ERR_INVALID;
+    }
 
     return HT_OK;
 }

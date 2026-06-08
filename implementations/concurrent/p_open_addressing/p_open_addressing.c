@@ -263,9 +263,11 @@ ht_result p_open_addressing_create_impl_ex(
 ) {
     p_open_table *t;
     p_open_image *img;
+    ht_backend_config resolved;
     size_t capacity;
     size_t min_capacity;
     size_t thread_count;
+    ht_result rc;
 
     if (out == NULL) {
         return HT_ERR_INVALID;
@@ -276,27 +278,25 @@ ht_result p_open_addressing_create_impl_ex(
         return HT_ERR_INVALID;
     }
 
-    capacity = (cfg->init_capacity > 0)
-        ? cfg->init_capacity
-        : DEFAULT_INITIAL_CAPACITY;
-    capacity = next_pow2(capacity);
-    if (capacity == 0) {
-        return HT_ERR_INVALID;
+    rc = ht_backend_config_resolve(
+        cfg,
+        DEFAULT_INITIAL_CAPACITY,
+        DEFAULT_MIN_CAPACITY,
+        DEFAULT_MAX_LOAD,
+        DEFAULT_MIN_LOAD,
+        &resolved
+    );
+    if (rc != HT_OK) {
+        return rc;
+    }
+    rc = ht_backend_config_validate_open_addressing_load(&resolved, 0);
+    if (rc != HT_OK) {
+        return rc;
     }
 
-    min_capacity = (cfg->min_capacity > 0)
-        ? cfg->min_capacity
-        : DEFAULT_MIN_CAPACITY;
-    min_capacity = next_pow2(min_capacity);
-    if (min_capacity == 0) {
-        return HT_ERR_INVALID;
-    }
-
-    if (capacity < min_capacity) {
-        capacity = min_capacity;
-    }
-
-    thread_count = (cfg->thread_count > 0) ? cfg->thread_count : 1;
+    capacity = resolved.capacity;
+    min_capacity = resolved.min_capacity;
+    thread_count = resolved.thread_count;
     img = p_open_image_create(capacity, thread_count);
     if (img == NULL) {
         return HT_ERR_OOM;
@@ -340,17 +340,13 @@ ht_result p_open_addressing_create_impl_ex(
 
     atomic_init(&t->active, img);
     t->min_capacity = min_capacity;
-    t->max_load_factor = (cfg->max_load_factor > 0.0)
-        ? cfg->max_load_factor
-        : DEFAULT_MAX_LOAD;
-    t->min_load_factor = (cfg->min_load_factor > 0.0)
-        ? cfg->min_load_factor
-        : DEFAULT_MIN_LOAD;
-    t->resize_mode = cfg->rsz_mode;
-    t->hash_fn = (cfg->hash_fn != NULL) ? cfg->hash_fn : default_hash;
-    t->hash_seed = cfg->hash_seed;
+    t->max_load_factor = resolved.max_load_factor;
+    t->min_load_factor = resolved.min_load_factor;
+    t->resize_mode = resolved.resize_mode;
+    t->hash_fn = resolved.hash_fn;
+    t->hash_seed = resolved.hash_seed;
     t->thread_count = thread_count;
-    t->collect_stats = cfg->collect_stats;
+    t->collect_stats = resolved.collect_stats;
     p_open_stats_init(&t->op_stats);
     memset(&t->resize_stats, 0, sizeof(t->resize_stats));
     ht_resize_stats_init(&t->resize_stats, t->collect_stats, capacity);
@@ -2161,6 +2157,7 @@ static ht_result p_open_grow_for_insert(
 ) {
     p_open_image *img;
     size_t used;
+    size_t new_capacity;
     ht_result rc;
 
     if (t == NULL) {
@@ -2184,12 +2181,13 @@ static ht_result p_open_grow_for_insert(
         return HT_OK;
     }
 
-    if (img->capacity > SIZE_MAX / 2) {
+    rc = ht_grow_capacity_pow2(img->capacity, &new_capacity);
+    if (rc != HT_OK) {
         pthread_rwlock_unlock(&t->resize_lock);
-        return HT_ERR_OOM;
+        return rc;
     }
 
-    rc = p_open_resize_locked(t, img->capacity * 2, 0);
+    rc = p_open_resize_locked(t, new_capacity, 0);
     pthread_rwlock_unlock(&t->resize_lock);
     return rc;
 }
@@ -2354,6 +2352,7 @@ static ht_result p_open_log_append(
     p_open_mutation_log *log;
     p_open_log_entry *new_entries;
     size_t new_capacity;
+    size_t new_bytes;
     uint64_t seq;
 
     if (t == NULL) {
@@ -2377,7 +2376,13 @@ static ht_result p_open_log_append(
     }
 
     if (log->count == log->capacity) {
-        if (log->capacity > SIZE_MAX / 2) {
+        if (ht_checked_mul_size(log->capacity, 2u, &new_capacity) != HT_OK ||
+            new_capacity == 0u ||
+            ht_checked_mul_size(
+                new_capacity,
+                sizeof(*new_entries),
+                &new_bytes
+            ) != HT_OK) {
             pthread_mutex_unlock(&log->mu);
             atomic_store_explicit(
                 &t->cleanup_fallback_required,
@@ -2386,10 +2391,9 @@ static ht_result p_open_log_append(
             );
             return HT_ERR_OOM;
         }
-        new_capacity = log->capacity * 2;
         new_entries = realloc(
             log->entries,
-            new_capacity * sizeof(*log->entries)
+            new_bytes
         );
         if (new_entries == NULL) {
             pthread_mutex_unlock(&log->mu);

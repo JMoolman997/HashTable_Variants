@@ -140,6 +140,10 @@ ht_result adv_open_addressing_create_impl_ex(const ht_config *cfg, void **out) {
   if (rc != HT_OK) {
     return rc;
   }
+  rc = ht_backend_config_validate_open_addressing_load(&resolved, 1);
+  if (rc != HT_OK) {
+    return rc;
+  }
   if (resolved.capacity < ADV_OPEN_ADDRESSING_GROUP_SIZE) {
     resolved.capacity = ADV_OPEN_ADDRESSING_GROUP_SIZE;
   }

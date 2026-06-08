@@ -101,6 +101,10 @@ ht_result simd_create_impl_ex(const ht_config *cfg, void **out) {
   if (rc != HT_OK) {
     return rc;
   }
+  rc = ht_backend_config_validate_open_addressing_load(&resolved, 0);
+  if (rc != HT_OK) {
+    return rc;
+  }
 
   rc = ht_checked_add_size(resolved.capacity, GROUP_SIZE, &ctrl_bytes);
   if (rc != HT_OK) {

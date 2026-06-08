@@ -132,7 +132,49 @@ static void inline_array_bucket_array_destroy(
     free(buckets);
 }
 
-static ht_result inline_array_bucket_insert_absent(
+static ht_result inline_array_bucket_insert_known_absent(
+    inline_array_bucket_ctx *ctx,
+    inline_array_bucket *buckets,
+    size_t bucket_index,
+    ht_key_t key,
+    ht_val_t value
+) {
+    inline_array_bucket *bucket;
+    inline_array_bucket *tail;
+
+    if (ctx == NULL || buckets == NULL) {
+        return HT_ERR_INVALID;
+    }
+
+    bucket = &buckets[bucket_index];
+    tail = bucket;
+
+    while (bucket != NULL) {
+        if (bucket->used < INLINE_BUCKET_CAPACITY) {
+            bucket->keys[bucket->used] = key;
+            bucket->values[bucket->used] = value;
+            bucket->used++;
+            return HT_OK;
+        }
+
+        tail = bucket;
+        bucket = bucket->next;
+    }
+
+    bucket = inline_array_bucket_overflow_alloc(ctx);
+    if (bucket == NULL) {
+        return HT_ERR_OOM;
+    }
+
+    bucket->keys[0] = key;
+    bucket->values[0] = value;
+    bucket->used = 1;
+    tail->next = bucket;
+
+    return HT_OK;
+}
+
+static ht_result inline_array_bucket_insert(
     void *ctx_in,
     void *buckets_in,
     size_t bucket_index,
@@ -144,44 +186,48 @@ static ht_result inline_array_bucket_insert_absent(
     inline_array_bucket *buckets = buckets_in;
     inline_array_bucket *bucket;
     inline_array_bucket *tail;
+    inline_array_bucket *first_free = NULL;
     uint64_t probe_len = 1;
 
     if (ctx == NULL || buckets == NULL) {
         return HT_ERR_INVALID;
     }
 
-    bucket = &buckets[bucket_index];
-    tail = bucket;
+    tail = &buckets[bucket_index];
+    for (bucket = tail; bucket != NULL; bucket = bucket->next) {
+        uint8_t i;
 
-    while (bucket != NULL) {
-        if (bucket->used < INLINE_BUCKET_CAPACITY) {
-            probe_len += bucket->used;
-            bucket->keys[bucket->used] = key;
-            bucket->values[bucket->used] = value;
-            bucket->used++;
+        if (first_free == NULL && bucket->used < INLINE_BUCKET_CAPACITY) {
+            first_free = bucket;
+        }
+
+        for (i = 0; i < bucket->used; i++) {
+            if (bucket->keys[i] == key) {
+                if (probe_len_out != NULL) {
+                    *probe_len_out = probe_len;
+                }
+                return HT_ERR_EXISTS;
+            }
+            probe_len++;
+        }
+
+        tail = bucket;
+    }
+
+    if (first_free == NULL) {
+        first_free = inline_array_bucket_overflow_alloc(ctx);
+        if (first_free == NULL) {
             if (probe_len_out != NULL) {
                 *probe_len_out = probe_len;
             }
-            return HT_OK;
+            return HT_ERR_OOM;
         }
-
-        probe_len += bucket->used;
-        tail = bucket;
-        bucket = bucket->next;
+        tail->next = first_free;
     }
 
-    bucket = inline_array_bucket_overflow_alloc(ctx);
-    if (bucket == NULL) {
-        if (probe_len_out != NULL) {
-            *probe_len_out = probe_len;
-        }
-        return HT_ERR_OOM;
-    }
-
-    bucket->keys[0] = key;
-    bucket->values[0] = value;
-    bucket->used = 1;
-    tail->next = bucket;
+    first_free->keys[first_free->used] = key;
+    first_free->values[first_free->used] = value;
+    first_free->used++;
 
     if (probe_len_out != NULL) {
         *probe_len_out = probe_len;
@@ -323,13 +369,12 @@ static ht_result inline_array_bucket_rehash_all(
                     hash_fn(bucket->keys[j], hash_seed),
                     new_capacity
                 );
-                ht_result rc = inline_array_bucket_insert_absent(
+                ht_result rc = inline_array_bucket_insert_known_absent(
                     ctx,
                     new_buckets,
                     bucket_index,
                     bucket->keys[j],
-                    bucket->values[j],
-                    NULL
+                    bucket->values[j]
                 );
 
                 if (rc != HT_OK) {
@@ -376,7 +421,7 @@ const mod_separate_chaining_bucket_ops inline_array_bucket_ops = {
     .array_alloc = inline_array_bucket_array_alloc,
     .array_release = inline_array_bucket_array_release,
     .array_destroy = inline_array_bucket_array_destroy,
-    .insert_absent = inline_array_bucket_insert_absent,
+    .insert = inline_array_bucket_insert,
     .get = inline_array_bucket_get,
     .remove = inline_array_bucket_remove,
     .rehash_all = inline_array_bucket_rehash_all,

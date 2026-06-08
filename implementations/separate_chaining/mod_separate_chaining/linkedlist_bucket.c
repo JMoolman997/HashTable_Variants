@@ -153,7 +153,7 @@ static void linkedlist_bucket_array_destroy(
     free(buckets);
 }
 
-static ht_result linkedlist_bucket_insert_absent(
+static ht_result linkedlist_bucket_insert(
     void *ctx_in,
     void *buckets_in,
     size_t bucket_index,
@@ -164,15 +164,26 @@ static ht_result linkedlist_bucket_insert_absent(
     linkedlist_bucket_ctx *ctx = ctx_in;
     linkedlist_bucket *buckets = buckets_in;
     linkedlist_bucket_node *node;
+    uint64_t probe_len = 1;
 
     if (ctx == NULL || buckets == NULL) {
         return HT_ERR_INVALID;
     }
 
+    for (node = buckets[bucket_index]; node != NULL; node = node->next) {
+        if (node->key == key) {
+            if (probe_len_out != NULL) {
+                *probe_len_out = probe_len;
+            }
+            return HT_ERR_EXISTS;
+        }
+        probe_len++;
+    }
+
     node = linkedlist_bucket_node_alloc(ctx);
     if (node == NULL) {
         if (probe_len_out != NULL) {
-            *probe_len_out = 1;
+            *probe_len_out = probe_len;
         }
         return HT_ERR_OOM;
     }
@@ -183,7 +194,7 @@ static ht_result linkedlist_bucket_insert_absent(
     buckets[bucket_index] = node;
 
     if (probe_len_out != NULL) {
-        *probe_len_out = 1;
+        *probe_len_out = probe_len;
     }
 
     return HT_OK;
@@ -329,7 +340,7 @@ const mod_separate_chaining_bucket_ops linkedlist_bucket_ops = {
     .array_alloc = linkedlist_bucket_array_alloc,
     .array_release = linkedlist_bucket_array_release,
     .array_destroy = linkedlist_bucket_array_destroy,
-    .insert_absent = linkedlist_bucket_insert_absent,
+    .insert = linkedlist_bucket_insert,
     .get = linkedlist_bucket_get,
     .remove = linkedlist_bucket_remove,
     .rehash_all = linkedlist_bucket_rehash_all,

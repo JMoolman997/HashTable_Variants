@@ -124,19 +124,15 @@ static void segmented_bucket_array_destroy(
     free(buckets);
 }
 
-static ht_result segmented_bucket_insert_absent(
-    void *ctx_in,
-    void *buckets_in,
+static ht_result segmented_bucket_insert_known_absent(
+    segmented_bucket_ctx *ctx,
+    segmented_bucket *buckets,
     size_t bucket_index,
     ht_key_t key,
-    ht_val_t value,
-    uint64_t *probe_len_out
+    ht_val_t value
 ) {
-    segmented_bucket_ctx *ctx = ctx_in;
-    segmented_bucket *buckets = buckets_in;
     bucket_segment_t *segment;
     bucket_segment_t *tail;
-    uint64_t probe_len = 1;
 
     if (ctx == NULL || buckets == NULL) {
         return HT_ERR_INVALID;
@@ -147,9 +143,6 @@ static ht_result segmented_bucket_insert_absent(
     if (buckets[bucket_index].head == NULL) {
         buckets[bucket_index].head = segmented_bucket_segment_alloc(ctx);
         if (buckets[bucket_index].head == NULL) {
-            if (probe_len_out != NULL) {
-                *probe_len_out = probe_len;
-            }
             return HT_ERR_OOM;
         }
     }
@@ -159,26 +152,18 @@ static ht_result segmented_bucket_insert_absent(
 
     while (segment != NULL) {
         if (segment->used < SEGMENT_CAPACITY) {
-            probe_len += segment->used;
             segment->keys[segment->used] = key;
             segment->values[segment->used] = value;
             segment->used++;
-            if (probe_len_out != NULL) {
-                *probe_len_out = probe_len;
-            }
             return HT_OK;
         }
 
-        probe_len += segment->used;
         tail = segment;
         segment = segment->next;
     }
 
     segment = segmented_bucket_segment_alloc(ctx);
     if (segment == NULL) {
-        if (probe_len_out != NULL) {
-            *probe_len_out = probe_len;
-        }
         return HT_ERR_OOM;
     }
 
@@ -186,6 +171,70 @@ static ht_result segmented_bucket_insert_absent(
     segment->values[0] = value;
     segment->used = 1;
     tail->next = segment;
+
+    return HT_OK;
+}
+
+static ht_result segmented_bucket_insert(
+    void *ctx_in,
+    void *buckets_in,
+    size_t bucket_index,
+    ht_key_t key,
+    ht_val_t value,
+    uint64_t *probe_len_out
+) {
+    segmented_bucket_ctx *ctx = ctx_in;
+    segmented_bucket *buckets = buckets_in;
+    bucket_segment_t *segment;
+    bucket_segment_t *tail = NULL;
+    bucket_segment_t *first_free = NULL;
+    uint64_t probe_len = 1;
+
+    if (ctx == NULL || buckets == NULL) {
+        return HT_ERR_INVALID;
+    }
+
+    for (segment = buckets[bucket_index].head;
+         segment != NULL;
+         segment = segment->next) {
+        uint8_t i;
+
+        if (first_free == NULL && segment->used < SEGMENT_CAPACITY) {
+            first_free = segment;
+        }
+
+        for (i = 0; i < segment->used; i++) {
+            if (segment->keys[i] == key) {
+                if (probe_len_out != NULL) {
+                    *probe_len_out = probe_len;
+                }
+                return HT_ERR_EXISTS;
+            }
+            probe_len++;
+        }
+
+        tail = segment;
+    }
+
+    if (first_free == NULL) {
+        first_free = segmented_bucket_segment_alloc(ctx);
+        if (first_free == NULL) {
+            if (probe_len_out != NULL) {
+                *probe_len_out = probe_len;
+            }
+            return HT_ERR_OOM;
+        }
+
+        if (tail == NULL) {
+            buckets[bucket_index].head = first_free;
+        } else {
+            tail->next = first_free;
+        }
+    }
+
+    first_free->keys[first_free->used] = key;
+    first_free->values[first_free->used] = value;
+    first_free->used++;
 
     if (probe_len_out != NULL) {
         *probe_len_out = probe_len;
@@ -324,13 +373,12 @@ static ht_result segmented_bucket_rehash_all(
                     hash_fn(segment->keys[j], hash_seed),
                     new_capacity
                 );
-                ht_result rc = segmented_bucket_insert_absent(
+                ht_result rc = segmented_bucket_insert_known_absent(
                     ctx,
                     new_buckets,
                     bucket_index,
                     segment->keys[j],
-                    segment->values[j],
-                    NULL
+                    segment->values[j]
                 );
 
                 if (rc != HT_OK) {
@@ -383,7 +431,7 @@ const mod_separate_chaining_bucket_ops segmented_bucket_ops = {
     .array_alloc = segmented_bucket_array_alloc,
     .array_release = segmented_bucket_array_release,
     .array_destroy = segmented_bucket_array_destroy,
-    .insert_absent = segmented_bucket_insert_absent,
+    .insert = segmented_bucket_insert,
     .get = segmented_bucket_get,
     .remove = segmented_bucket_remove,
     .rehash_all = segmented_bucket_rehash_all,

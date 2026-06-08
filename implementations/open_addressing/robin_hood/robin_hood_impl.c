@@ -227,6 +227,10 @@ ht_result robin_hood_create_impl_ex(const ht_config *cfg, void **out) {
   if (rc != HT_OK) {
     return rc;
   }
+  rc = ht_backend_config_validate_open_addressing_load(&resolved, 0);
+  if (rc != HT_OK) {
+    return rc;
+  }
 
   t = calloc(1, sizeof(*t));
   if (t == NULL) {
@@ -299,6 +303,7 @@ static ht_result robin_hood_insert_impl(void *impl, ht_key_t key,
   size_t curr_psl;
   size_t base;
   size_t existing_slot;
+  size_t new_capacity;
   uint64_t find_probe_len;
   int checking_existence;
 
@@ -331,8 +336,16 @@ retry:
   }
   if (t->resize_mode != HT_RESIZE_NONE &&
       (HT_SHOULD_GROW_COUNT(t, used) || t->used >= t->capacity)) {
-    rc = robin_hood_resize(t, t->capacity * 2);
+    rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
     if (rc != HT_OK) {
+      HT_UPDATE_PROBE_STATS(t, find_probe_len);
+      HT_RECORD_INSERT_FAILURE(t);
+      return rc;
+    }
+
+    rc = robin_hood_resize(t, new_capacity);
+    if (rc != HT_OK) {
+      HT_UPDATE_PROBE_STATS(t, find_probe_len);
       HT_RECORD_INSERT_FAILURE(t);
       return rc;
     }
@@ -401,10 +414,18 @@ retry:
   }
 
   if (t->resize_mode != HT_RESIZE_NONE) {
-    rc = robin_hood_resize(t, t->capacity * 2);
+    rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
+    if (rc != HT_OK) {
+      HT_UPDATE_PROBE_STATS(t, t->capacity);
+      HT_RECORD_INSERT_FAILURE(t);
+      return rc;
+    }
+
+    rc = robin_hood_resize(t, new_capacity);
     if (rc == HT_OK) {
       goto retry;
     }
+    HT_UPDATE_PROBE_STATS(t, t->capacity);
     HT_RECORD_INSERT_FAILURE(t);
     return rc;
   }
