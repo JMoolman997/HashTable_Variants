@@ -41,9 +41,9 @@ ZIG_GLOBAL_CACHE_DIR=.zig-cache/global zig build check
 
 | Path | Purpose |
 |---|---|
-| `include/hash_table/ht.h` | Public map API |
-| `include/hash_table/ht_types.h` | Public config, result, stats, key, and value types |
-| `include/hash_table/ht_bench.h` | Benchmark-facing direct binding API |
+| `include/ht.h` | Public map API |
+| `include/ht_types.h` | Public config, result, stats, key, and value types |
+| `include/ht_bench.h` | Benchmark-facing direct binding API |
 | `src/core/` | API dispatcher, implementation registry, internal vtable contract |
 | `src/util/` | Shared C helpers |
 | `implementations/open_addressing/` | Open-addressing family |
@@ -201,7 +201,7 @@ See `docs/benchmarking.md` for measurement rules and more examples.
 2. Implement private state plus functions matching `src/core/ht_internal.h`.
 3. Expose `<variant>_create_impl_ex(...)` and `<variant>_vtable(void)`.
 4. Expose `<variant>_bind_bench_iface(...)` only when direct benchmark binding is useful.
-5. Add an `HT_IMPL_*` enum value in `include/hash_table/ht_types.h`.
+5. Add an `HT_IMPL_*` enum value in `include/ht_types.h`.
 6. Add one `src/core/ht_registry.c` entry with the enum, label, constructor, and vtable getter.
 7. Add include paths and source files to `build.zig`.
 8. Add focused tests only for behavior outside the shared matrix.

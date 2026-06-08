@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const common_include_dirs = [_][]const u8{
-    "include/hash_table",
+    "include",
     "src/core",
     "src/util",
     "implementations/open_addressing/open_addressing",
