@@ -366,6 +366,7 @@ static ht_result open_addressing_insert_impl(
     int found_existing;
     int needs_empty_slot;
     uint64_t probe_len = 0;
+    size_t new_capacity;
     ht_result rc;
 
     if (t == NULL)
@@ -389,7 +390,10 @@ retry:
     if (rc != HT_OK)
     {
         if (rc == HT_ERR_FULL && t->resize_mode != HT_RESIZE_NONE) {
-            rc = open_addressing_resize(t, t->capacity * 2);
+            rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
+            if (rc == HT_OK) {
+                rc = open_addressing_resize(t, new_capacity);
+            }
             if (rc == HT_OK) {
                 goto retry;
             }
@@ -411,7 +415,10 @@ retry:
         needs_empty_slot &&
         HT_SHOULD_GROW_COUNT(t, used))
     {
-        rc = open_addressing_resize(t, t->capacity * 2);
+        rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
+        if (rc == HT_OK) {
+            rc = open_addressing_resize(t, new_capacity);
+        }
         if (rc != HT_OK)
         {
             HT_RECORD_INSERT_FAILURE(t);
@@ -535,7 +542,7 @@ static ht_result open_addressing_remove_impl(
             new_capacity = t->min_capacity;
         }
 
-        return open_addressing_resize(t, new_capacity);
+        (void)open_addressing_resize(t, new_capacity);
     }
 
     return HT_OK;

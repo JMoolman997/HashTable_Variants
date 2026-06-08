@@ -140,6 +140,12 @@ ht_result adv_open_addressing_create_impl_ex(const ht_config *cfg, void **out) {
   if (rc != HT_OK) {
     return rc;
   }
+  if (resolved.capacity < ADV_OPEN_ADDRESSING_GROUP_SIZE) {
+    resolved.capacity = ADV_OPEN_ADDRESSING_GROUP_SIZE;
+  }
+  if (resolved.min_capacity < ADV_OPEN_ADDRESSING_GROUP_SIZE) {
+    resolved.min_capacity = ADV_OPEN_ADDRESSING_GROUP_SIZE;
+  }
   rc = ht_checked_add_size(
       resolved.capacity, ADV_OPEN_ADDRESSING_GROUP_SIZE - 1u, &ctrl_bytes);
   if (rc != HT_OK) {
@@ -243,9 +249,9 @@ static ht_result adv_open_addressing_insert_impl(void *impl, ht_key_t key,
   adv_open_addressing_table *t = impl;
   uint64_t hash;
   size_t idx;
-  size_t existing_slot;
+  size_t new_capacity;
   size_t psl_incoming = 0;
-  uint64_t probe_len = 0;
+  uint64_t find_probe_len = 0;
   ht_result rc;
 
   if (t == NULL) {
@@ -254,17 +260,22 @@ static ht_result adv_open_addressing_insert_impl(void *impl, ht_key_t key,
   HT_STATS_INC(t, inserts);
 
   hash = t->hash_fn(key, t->hash_seed);
-  rc = adv_open_addressing_find_slot(t, key, hash, &existing_slot, &probe_len);
+  rc = adv_open_addressing_find_slot(
+      t, key, hash, NULL, &find_probe_len);
   if (rc == HT_OK) {
-    HT_UPDATE_PROBE_STATS(t, probe_len);
+    HT_UPDATE_PROBE_STATS(t, find_probe_len);
     HT_RECORD_INSERT_FAILURE(t);
     return HT_ERR_EXISTS;
   }
 
-  /* Resize if needed. */
-  if (t->resize_mode != HT_RESIZE_NONE && HT_SHOULD_GROW_COUNT(t, used)) {
-    rc = adv_open_addressing_resize(t, t->capacity * 2);
+  if (t->resize_mode != HT_RESIZE_NONE &&
+      (t->used == t->capacity || HT_SHOULD_GROW_COUNT(t, used))) {
+    rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
+    if (rc == HT_OK) {
+      rc = adv_open_addressing_resize(t, new_capacity);
+    }
     if (rc != HT_OK) {
+      HT_UPDATE_PROBE_STATS(t, find_probe_len);
       HT_RECORD_INSERT_FAILURE(t);
       return rc;
     }
@@ -273,7 +284,7 @@ static ht_result adv_open_addressing_insert_impl(void *impl, ht_key_t key,
   /* No-resize occupancy budget check. */
   if (t->resize_mode == HT_RESIZE_NONE &&
       (double)(t->used + 1) > (double)t->capacity * t->max_load_factor) {
-    HT_UPDATE_PROBE_STATS(t, probe_len);
+    HT_UPDATE_PROBE_STATS(t, find_probe_len);
     HT_RECORD_INSERT_FAILURE(t);
     return HT_ERR_FULL;
   }
@@ -285,20 +296,20 @@ static ht_result adv_open_addressing_insert_impl(void *impl, ht_key_t key,
     uint8_t ctrl = t->ctrl[idx];
 
     if (ctrl == ADV_OPEN_ADDRESSING_CTRL_EMPTY) {
-      t->ctrl[idx] = (uint8_t)(hash & ADV_OPEN_ADDRESSING_CTRL_FULL_MASK);
+      t->ctrl[idx] = ht_hash_tag_u7_high(hash);
       t->hashes[idx] = hash;
       t->entries[idx].key = key;
       t->entries[idx].value = value;
       t->size++;
       t->used++;
       adv_open_addressing_sync_ctrl(t);
-      HT_UPDATE_PROBE_STATS(t, probe + 1);
+      HT_UPDATE_PROBE_STATS(t, find_probe_len + probe + 1);
       return HT_OK;
     }
 
     /* Check for duplicate key. */
     if (t->hashes[idx] == hash && t->entries[idx].key == key) {
-      HT_UPDATE_PROBE_STATS(t, probe + 1);
+      HT_UPDATE_PROBE_STATS(t, find_probe_len + probe + 1);
       HT_RECORD_INSERT_FAILURE(t);
       return HT_ERR_EXISTS;
     }
@@ -312,7 +323,7 @@ static ht_result adv_open_addressing_insert_impl(void *impl, ht_key_t key,
       ht_key_t tmp_key = t->entries[idx].key;
       ht_val_t tmp_value = t->entries[idx].value;
 
-      t->ctrl[idx] = (uint8_t)(hash & ADV_OPEN_ADDRESSING_CTRL_FULL_MASK);
+      t->ctrl[idx] = ht_hash_tag_u7_high(hash);
       t->hashes[idx] = hash;
       t->entries[idx].key = key;
       t->entries[idx].value = value;
@@ -327,7 +338,7 @@ static ht_result adv_open_addressing_insert_impl(void *impl, ht_key_t key,
     psl_incoming++;
   }
 
-  HT_UPDATE_PROBE_STATS(t, t->capacity);
+  HT_UPDATE_PROBE_STATS(t, find_probe_len + t->capacity);
   HT_RECORD_INSERT_FAILURE(t);
   return HT_ERR_FULL;
 }
@@ -430,7 +441,7 @@ static ht_result adv_open_addressing_remove_impl(void *impl, ht_key_t key) {
       new_capacity = t->min_capacity;
     }
 
-    return adv_open_addressing_resize(t, new_capacity);
+    (void)adv_open_addressing_resize(t, new_capacity);
   }
 
   return HT_OK;
@@ -691,7 +702,7 @@ static ht_result adv_open_addressing_insert_rehash(adv_open_addressing_table *t,
     uint8_t ctrl = t->ctrl[idx];
 
     if (ctrl == ADV_OPEN_ADDRESSING_CTRL_EMPTY) {
-      t->ctrl[idx] = (uint8_t)(hash & ADV_OPEN_ADDRESSING_CTRL_FULL_MASK);
+      t->ctrl[idx] = ht_hash_tag_u7_high(hash);
       t->hashes[idx] = hash;
       t->entries[idx].key = key;
       t->entries[idx].value = value;
@@ -706,7 +717,7 @@ static ht_result adv_open_addressing_insert_rehash(adv_open_addressing_table *t,
       ht_key_t tmp_key = t->entries[idx].key;
       ht_val_t tmp_value = t->entries[idx].value;
 
-      t->ctrl[idx] = (uint8_t)(hash & ADV_OPEN_ADDRESSING_CTRL_FULL_MASK);
+      t->ctrl[idx] = ht_hash_tag_u7_high(hash);
       t->hashes[idx] = hash;
       t->entries[idx].key = key;
       t->entries[idx].value = value;
@@ -734,8 +745,8 @@ adv_open_addressing_find_slot(const adv_open_addressing_table *t, ht_key_t key,
                               uint64_t *probe_len_out) {
   size_t cap_mask = t->capacity - 1;
   size_t base = HT_INDEX_FOR_U64(hash, t->capacity);
-  uint8_t tag = (uint8_t)(hash & ADV_OPEN_ADDRESSING_CTRL_FULL_MASK);
-  __m128i target = _mm_set1_epi8(tag);
+  uint8_t tag = ht_hash_tag_u7_high(hash);
+  __m128i target = _mm_set1_epi8((char)tag);
   __m128i empty_val = _mm_set1_epi8((char)ADV_OPEN_ADDRESSING_CTRL_EMPTY);
 
   for (size_t probe = 0; probe < t->capacity;

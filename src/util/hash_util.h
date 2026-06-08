@@ -20,6 +20,10 @@ static inline uint8_t ht_hash_tag_u8(uint64_t hash) {
     return (uint8_t)(hash >> 56);
 }
 
+static inline uint8_t ht_hash_tag_u7_high(uint64_t hash) {
+    return (uint8_t)((hash >> 57) & 0x7Fu);
+}
+
 static inline uint64_t default_hash(ht_key_t key, uint64_t seed) {
     uint64_t x = key ^ seed;
 

@@ -7,7 +7,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "backshift_impl.h"
 #include "backend_config.h"
 #include "capacity_util.h"
 #include "hash_func.h"
@@ -39,6 +38,8 @@ int test_reuse_deleted_slot_no_resize(ht_impl impl, const char *impl_name);
 int test_resize_grow_integrity(ht_impl impl, const char *impl_name);
 int test_resize_shrink_integrity(ht_impl impl, const char *impl_name);
 int test_collision_heavy_case(ht_impl impl, const char *impl_name);
+int test_backshift_full_table_remove_integrity(ht_impl impl, const char *impl_name);
+int test_adv_full_table_insert_failure_integrity(ht_impl impl, const char *impl_name);
 
 static int test_hash_helpers(void);
 static int test_internal_helpers(void);
@@ -66,7 +67,9 @@ static const test_case TEST_CASES[] = {
     { "reuse_deleted_slot_no_resize", test_reuse_deleted_slot_no_resize },
     { "resize_grow_integrity", test_resize_grow_integrity },
     { "resize_shrink_integrity", test_resize_shrink_integrity },
-    { "collision_heavy_case", test_collision_heavy_case }
+    { "collision_heavy_case", test_collision_heavy_case },
+    { "backshift_full_table_remove_integrity", test_backshift_full_table_remove_integrity },
+    { "adv_full_table_insert_failure_integrity", test_adv_full_table_insert_failure_integrity }
 };
 
 int main(
@@ -156,13 +159,6 @@ static int test_internal_helpers(
         ht_checked_mul_size(SIZE_MAX, 2, &out) != HT_ERR_OOM ||
         ht_checked_add_size(16, 15, &out) != HT_OK || out != 31) {
         fprintf(stderr, "[FAIL] memory helper overflow handling\n");
-        return -1;
-    }
-
-    if (!backshift_can_move(0, 2, 3, 7) ||
-        !backshift_can_move(6, 1, 2, 7) ||
-        backshift_can_move(2, 1, 3, 7)) {
-        fprintf(stderr, "[FAIL] backshift movement helper\n");
         return -1;
     }
 

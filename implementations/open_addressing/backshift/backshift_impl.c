@@ -202,6 +202,7 @@ static ht_result backshift_find_insert_slot(const backshift_table *t,
                                             size_t *slot_out,
                                             int *found_existing,
                                             uint64_t *probe_len_out);
+static void backshift_close_hole(backshift_table *t, size_t hole);
 
 /* ------------------------------------------------------------------------- */
 /* vtable                                                                    */
@@ -314,6 +315,7 @@ static ht_result backshift_insert_impl(void *impl, ht_key_t key,
   int found_existing;
   int needs_empty_slot;
   uint64_t probe_len = 0;
+  size_t new_capacity;
   ht_result rc;
 
   if (t == NULL) {
@@ -329,7 +331,10 @@ retry:
                                   &probe_len);
   if (rc != HT_OK) {
     if (rc == HT_ERR_FULL && t->resize_mode != HT_RESIZE_NONE) {
-      rc = backshift_resize(t, t->capacity * 2);
+      rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
+      if (rc == HT_OK) {
+        rc = backshift_resize(t, new_capacity);
+      }
       if (rc == HT_OK) {
         goto retry;
       }
@@ -348,7 +353,10 @@ retry:
   needs_empty_slot = (t->slots[slot].state == BACKSHIFT_SLOT_EMPTY);
   if (t->resize_mode != HT_RESIZE_NONE && needs_empty_slot &&
       HT_SHOULD_GROW_COUNT(t, used)) {
-    rc = backshift_resize(t, t->capacity * 2);
+    rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
+    if (rc == HT_OK) {
+      rc = backshift_resize(t, new_capacity);
+    }
     if (rc != HT_OK) {
       HT_RECORD_INSERT_FAILURE(t);
       return rc;
@@ -439,19 +447,7 @@ static ht_result backshift_remove_impl(void *impl, ht_key_t key) {
 
   HT_UPDATE_PROBE_STATS(t, probe_len);
 
-  /* Backshift deletion: shift subsequent entries backwards to fill the gap */
-  size_t i = (slot + 1) & (t->capacity - 1);
-  while (t->slots[i].state == BACKSHIFT_SLOT_FULL) {
-    size_t ideal = t->slots[i].hash & (t->capacity - 1);
-    /* Check if the element at i can be shifted back to slot.
-       It can if the ideal slot is cyclically <= slot. */
-    if (backshift_can_move(ideal, slot, i, t->capacity - 1u)) {
-      t->slots[slot] = t->slots[i];
-      slot = i;
-    }
-    i = (i + 1) & (t->capacity - 1);
-  }
-  t->slots[slot].state = BACKSHIFT_SLOT_EMPTY;
+  backshift_close_hole(t, slot);
   t->used--;
   t->size--;
 
@@ -463,7 +459,7 @@ static ht_result backshift_remove_impl(void *impl, ht_key_t key) {
       new_capacity = t->min_capacity;
     }
 
-    return backshift_resize(t, new_capacity);
+    (void)backshift_resize(t, new_capacity);
   }
 
   return HT_OK;
@@ -658,6 +654,27 @@ static ht_result backshift_insert_rehash(backshift_table *t, uint64_t hash,
   }
 
   return HT_ERR_FULL;
+}
+
+static void backshift_close_hole(backshift_table *t, size_t hole) {
+  size_t mask;
+  size_t scan;
+
+  mask = t->capacity - 1u;
+  t->slots[hole].state = BACKSHIFT_SLOT_EMPTY;
+  scan = (hole + 1u) & mask;
+
+  while (t->slots[scan].state == BACKSHIFT_SLOT_FULL) {
+    size_t ideal = HT_INDEX_FOR_U64(t->slots[scan].hash, t->capacity);
+
+    if (((scan - ideal) & mask) > ((hole - ideal) & mask)) {
+      t->slots[hole] = t->slots[scan];
+      t->slots[scan].state = BACKSHIFT_SLOT_EMPTY;
+      hole = scan;
+    }
+
+    scan = (scan + 1u) & mask;
+  }
 }
 
 static ht_result backshift_find_slot(const backshift_table *t, ht_key_t key,

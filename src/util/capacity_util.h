@@ -49,6 +49,17 @@ static inline ht_result ht_checked_next_pow2(size_t value, size_t *out) {
     return HT_OK;
 }
 
+static inline ht_result ht_grow_capacity_pow2(size_t capacity, size_t *out) {
+    if (out == NULL) {
+        return HT_ERR_INVALID;
+    }
+    if (capacity > SIZE_MAX / 2u) {
+        return HT_ERR_OOM;
+    }
+
+    return ht_checked_next_pow2(capacity * 2u, out);
+}
+
 static inline size_t floor_pow2(size_t x) {
     size_t p = 1u;
 

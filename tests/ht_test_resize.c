@@ -6,6 +6,7 @@ int test_full_table_no_resize(
 ) {
     ht_config   cfg;
     ht_map     *map;
+    size_t      limit;
 
     if (impl == HT_IMPL_LF_HOPSCOTCH) {
         return 0;
@@ -16,13 +17,117 @@ int test_full_table_no_resize(
     map = ht_create(&cfg);
 
     TEST_CHECK(map != NULL, "ht_create returned NULL");
-    TEST_CHECK(test_insert_range(map, 800, 4) == 0, "expected first 4 inserts to succeed");
+    limit = ht_capacity(map) / 2u;
+    TEST_CHECK(limit > 0u, "unexpected zero fixed-capacity limit");
+    TEST_CHECK(test_insert_range(map, 800, limit) == 0, "expected initial inserts to succeed");
     TEST_CHECK(
-        ht_insert(map, 804, test_value_for_key(804)) == HT_ERR_FULL,
+        ht_insert(map, 800 + (ht_key_t)limit, test_value_for_key(800 + (ht_key_t)limit)) == HT_ERR_FULL,
         "expected HT_ERR_FULL on insert past fixed-capacity limit"
     );
-    TEST_CHECK(ht_size(map) == 4, "size changed after full-table insert");
-    TEST_CHECK(test_verify_range(map, 800, 4) == 0, "existing entries corrupted");
+    TEST_CHECK(ht_size(map) == limit, "size changed after full-table insert");
+    TEST_CHECK(test_verify_range(map, 800, limit) == 0, "existing entries corrupted");
+
+    ht_destroy(map);
+    return 0;
+
+fail:
+    ht_destroy(map);
+    return -1;
+}
+
+int test_backshift_full_table_remove_integrity(
+    ht_impl     impl,
+    const char *impl_name
+) {
+    ht_config cfg;
+    ht_map   *map = NULL;
+    ht_val_t  value;
+    size_t    i;
+
+    if (impl != HT_IMPL_BACKSHIFT) {
+        return 0;
+    }
+
+    cfg = test_make_config(impl, HT_RESIZE_NONE, 8);
+    cfg.max_load_factor = 1.0;
+    cfg.hash_fn = test_constant_hash;
+    map = ht_create(&cfg);
+
+    TEST_CHECK(map != NULL, "ht_create returned NULL");
+    for (i = 0; i < ht_capacity(map); i++) {
+        TEST_CHECK(
+            ht_insert(map, 1000 + (ht_key_t)i, test_value_for_key(1000 + (ht_key_t)i)) == HT_OK,
+            "fill insert failed at index %zu",
+            i
+        );
+    }
+
+    TEST_CHECK(ht_remove(map, 1003) == HT_OK, "full-table remove failed");
+    TEST_CHECK(ht_size(map) == ht_capacity(map) - 1u, "unexpected size after remove");
+    TEST_CHECK(ht_get(map, 1003, &value) == HT_ERR_NOT_FOUND, "removed key still present");
+
+    for (i = 0; i < ht_capacity(map); i++) {
+        ht_key_t key = 1000 + (ht_key_t)i;
+
+        if (key == 1003) {
+            continue;
+        }
+
+        TEST_CHECK(ht_get(map, key, &value) == HT_OK, "survivor missing at index %zu", i);
+        TEST_CHECK(value == test_value_for_key(key), "wrong survivor value");
+    }
+
+    ht_destroy(map);
+    return 0;
+
+fail:
+    ht_destroy(map);
+    return -1;
+}
+
+int test_adv_full_table_insert_failure_integrity(
+    ht_impl     impl,
+    const char *impl_name
+) {
+    ht_config cfg;
+    ht_map   *map = NULL;
+    ht_val_t  value;
+    size_t    capacity;
+    size_t    i;
+
+    if (impl != HT_IMPL_ADV_OPEN_ADDRESSING) {
+        return 0;
+    }
+
+    cfg = test_make_config(impl, HT_RESIZE_NONE, 16);
+    cfg.max_load_factor = 1.0;
+    cfg.hash_fn = test_constant_hash;
+    map = ht_create(&cfg);
+
+    TEST_CHECK(map != NULL, "ht_create returned NULL");
+    capacity = ht_capacity(map);
+
+    for (i = 0; i < capacity; i++) {
+        TEST_CHECK(
+            ht_insert(map, 2000 + (ht_key_t)i, test_value_for_key(2000 + (ht_key_t)i)) == HT_OK,
+            "fill insert failed at index %zu",
+            i
+        );
+    }
+
+    TEST_CHECK(
+        ht_insert(map, 9999, test_value_for_key(9999)) == HT_ERR_FULL,
+        "full-table insert did not fail"
+    );
+    TEST_CHECK(ht_size(map) == capacity, "failed insert changed size");
+    TEST_CHECK(ht_get(map, 9999, &value) == HT_ERR_NOT_FOUND, "failed insert key became visible");
+
+    for (i = 0; i < capacity; i++) {
+        ht_key_t key = 2000 + (ht_key_t)i;
+
+        TEST_CHECK(ht_get(map, key, &value) == HT_OK, "existing key missing at index %zu", i);
+        TEST_CHECK(value == test_value_for_key(key), "existing key value changed");
+    }
 
     ht_destroy(map);
     return 0;

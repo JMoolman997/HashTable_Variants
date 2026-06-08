@@ -166,6 +166,7 @@ static ht_result metadata_insert_impl(void *impl, ht_key_t key,
   size_t slot;
   int found_existing;
   uint64_t probe_len = 0;
+  size_t new_capacity;
   ht_result rc;
 
   if (t == NULL) {
@@ -180,7 +181,10 @@ retry:
                                  &probe_len);
   if (rc != HT_OK) {
     if (rc == HT_ERR_FULL && t->resize_mode != HT_RESIZE_NONE) {
-      rc = metadata_resize(t, t->capacity * 2);
+      rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
+      if (rc == HT_OK) {
+        rc = metadata_resize(t, new_capacity);
+      }
       if (rc == HT_OK) {
         goto retry;
       }
@@ -199,7 +203,10 @@ retry:
   int was_empty = (t->ctrl[slot] == METADATA_EMPTY);
   if (t->resize_mode != HT_RESIZE_NONE && was_empty &&
       HT_SHOULD_GROW_COUNT(t, used)) {
-    rc = metadata_resize(t, t->capacity * 2);
+    rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
+    if (rc == HT_OK) {
+      rc = metadata_resize(t, new_capacity);
+    }
     if (rc != HT_OK) {
       HT_RECORD_INSERT_FAILURE(t);
       return rc;
@@ -218,7 +225,7 @@ retry:
   if (was_empty) {
     t->used++;
   }
-  t->ctrl[slot] = (uint8_t)(hash & METADATA_TAG_MASK);
+  t->ctrl[slot] = ht_hash_tag_u7_high(hash);
   t->data[slot].hash = hash;
   t->data[slot].key = key;
   t->data[slot].value = value;
@@ -291,7 +298,7 @@ static ht_result metadata_remove_impl(void *impl, ht_key_t key) {
       HT_SHOULD_SHRINK_COUNT(t, size)) {
     size_t new_cap =
         (t->capacity / 2 < t->min_capacity) ? t->min_capacity : t->capacity / 2;
-    return metadata_resize(t, new_cap);
+    (void)metadata_resize(t, new_cap);
   }
   return HT_OK;
 }
@@ -458,7 +465,7 @@ static ht_result metadata_insert_rehash(metadata_table *t, uint64_t hash,
   for (size_t i = 0; i < t->capacity; i++) {
     size_t idx = (base + i) & (t->capacity - 1);
     if (t->ctrl[idx] == METADATA_EMPTY) {
-      t->ctrl[idx] = (uint8_t)(hash & METADATA_TAG_MASK);
+      t->ctrl[idx] = ht_hash_tag_u7_high(hash);
       t->data[idx].hash = hash;
       t->data[idx].key = key;
       t->data[idx].value = value;
@@ -475,7 +482,7 @@ static ht_result metadata_find_slot(const metadata_table *t, ht_key_t key,
                                     uint64_t hash, size_t *slot_out,
                                     uint64_t *probe_len_out) {
   size_t base = HT_INDEX_FOR_U64(hash, t->capacity);
-  uint8_t tag = (uint8_t)(hash & METADATA_TAG_MASK);
+  uint8_t tag = ht_hash_tag_u7_high(hash);
 
   for (size_t i = 0; i < t->capacity; i++) {
     size_t idx = (base + i) & (t->capacity - 1);
@@ -509,7 +516,7 @@ static ht_result metadata_find_insert_slot(const metadata_table *t,
                                            int *found_existing,
                                            uint64_t *probe_len_out) {
   size_t base = HT_INDEX_FOR_U64(hash, t->capacity);
-  uint8_t tag = (uint8_t)(hash & METADATA_TAG_MASK);
+  uint8_t tag = ht_hash_tag_u7_high(hash);
   size_t first_deleted = (size_t)-1;
 
   *found_existing = 0;
@@ -548,6 +555,9 @@ static ht_result metadata_find_insert_slot(const metadata_table *t,
       *probe_len_out = t->capacity;
     }
     return HT_OK;
+  }
+  if (probe_len_out) {
+    *probe_len_out = t->capacity;
   }
   return HT_ERR_FULL;
 }

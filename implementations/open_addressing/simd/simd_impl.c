@@ -179,6 +179,7 @@ static ht_result simd_insert_impl(void *impl, ht_key_t key, ht_val_t value) {
   size_t slot;
   int found_existing;
   uint64_t probe_len = 0;
+  size_t new_capacity;
   ht_result rc;
 
   if (t == NULL) {
@@ -192,7 +193,10 @@ retry:
   rc = simd_find_insert_slot(t, key, hash, &slot, &found_existing, &probe_len);
   if (rc != HT_OK) {
     if (rc == HT_ERR_FULL && t->resize_mode != HT_RESIZE_NONE) {
-      rc = simd_resize(t, t->capacity * 2);
+      rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
+      if (rc == HT_OK) {
+        rc = simd_resize(t, new_capacity);
+      }
       if (rc == HT_OK) {
         goto retry;
       }
@@ -211,7 +215,10 @@ retry:
   int was_empty = (t->ctrl[slot] == SIMD_EMPTY);
   if (t->resize_mode != HT_RESIZE_NONE && was_empty &&
       HT_SHOULD_GROW_COUNT(t, used)) {
-    rc = simd_resize(t, t->capacity * 2);
+    rc = ht_grow_capacity_pow2(t->capacity, &new_capacity);
+    if (rc == HT_OK) {
+      rc = simd_resize(t, new_capacity);
+    }
     if (rc != HT_OK) {
       HT_RECORD_INSERT_FAILURE(t);
       return rc;
@@ -230,7 +237,7 @@ retry:
   if (was_empty) {
     t->used++;
   }
-  t->ctrl[slot] = (uint8_t)(hash & SIMD_TAG_MASK);
+  t->ctrl[slot] = ht_hash_tag_u7_high(hash);
   simd_mirror_ctrl(t);
 
   t->data[slot].hash = hash;
@@ -306,7 +313,7 @@ static ht_result simd_remove_impl(void *impl, ht_key_t key) {
       HT_SHOULD_SHRINK_COUNT(t, size)) {
     size_t new_cap =
         (t->capacity / 2 < t->min_capacity) ? t->min_capacity : t->capacity / 2;
-    return simd_resize(t, new_cap);
+    (void)simd_resize(t, new_cap);
   }
   return HT_OK;
 }
@@ -487,7 +494,7 @@ static ht_result simd_insert_rehash(simd_table *t, uint64_t hash, ht_key_t key,
   for (size_t i = 0; i < t->capacity; i++) {
     size_t idx = (base + i) & (t->capacity - 1);
     if (t->ctrl[idx] == SIMD_EMPTY) {
-      t->ctrl[idx] = (uint8_t)(hash & SIMD_TAG_MASK);
+      t->ctrl[idx] = ht_hash_tag_u7_high(hash);
       simd_mirror_ctrl(t);
       t->data[idx].hash = hash;
       t->data[idx].key = key;
@@ -505,7 +512,7 @@ static ht_result simd_find_slot(const simd_table *t, ht_key_t key,
                                 uint64_t hash, size_t *slot_out,
                                 uint64_t *probe_len_out) {
   size_t base = HT_INDEX_FOR_U64(hash, t->capacity);
-  uint8_t tag = (uint8_t)(hash & SIMD_TAG_MASK);
+  uint8_t tag = ht_hash_tag_u7_high(hash);
   __m128i tag_vec = _mm_set1_epi8((char)tag);
   __m128i empty_vec = _mm_set1_epi8((char)SIMD_EMPTY);
 
@@ -547,7 +554,7 @@ static ht_result simd_find_insert_slot(const simd_table *t, ht_key_t key,
                                        int *found_existing,
                                        uint64_t *probe_len_out) {
   size_t base = HT_INDEX_FOR_U64(hash, t->capacity);
-  uint8_t tag = (uint8_t)(hash & SIMD_TAG_MASK);
+  uint8_t tag = ht_hash_tag_u7_high(hash);
   __m128i tag_vec = _mm_set1_epi8((char)tag);
   __m128i empty_vec = _mm_set1_epi8((char)SIMD_EMPTY);
   size_t first_deleted = (size_t)-1;
@@ -617,5 +624,8 @@ static ht_result simd_find_insert_slot(const simd_table *t, ht_key_t key,
     return HT_OK;
   }
 
+  if (probe_len_out) {
+    *probe_len_out = t->capacity;
+  }
   return HT_ERR_FULL;
 }
