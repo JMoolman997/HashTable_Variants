@@ -27,7 +27,7 @@ zig build -Doptimize=ReleaseFast htbench_resize
   --warmup-ops 65536 \
   --repetitions 5 \
   --stats off \
-  --csv > results/lookup_hit_open_addressing.csv
+  --format csv > results/lookup_hit_open_addressing.csv
 ```
 
 ## Resize Example
@@ -39,7 +39,7 @@ zig build -Doptimize=ReleaseFast htbench_resize
   --timed-ops 1048576 \
   --repetitions 5 \
   --stats off \
-  --csv > results/resize_build_adv_open_addressing.csv
+  --format csv > results/resize_build_adv_open_addressing.csv
 ```
 
 ## Concurrent Example
@@ -52,8 +52,11 @@ zig build -Doptimize=ReleaseFast htbench_resize
   --thread-count 8 \
   --repetitions 5 \
   --stats off \
-  --csv > results/concurrent_lookup_p_open_addressing.csv
+  --format csv > results/concurrent_lookup_p_open_addressing.csv
 ```
+
+The default output is human-readable text. Use `--format csv` for the
+canonical machine format: one row per metric per repetition.
 
 ## Measurement Rules
 
@@ -61,10 +64,10 @@ zig build -Doptimize=ReleaseFast htbench_resize
 - Use `--stats off` for clean timing measurements.
 - Use `--stats on` for diagnostic/probe/memory rows, and report that mode with
   the result.
-- Use the same dataset size, load factor, keyspace mode, seed, and repetition
-  count when comparing implementations.
+- Use the same dataset size, load factor, keyspace mode, key seed, trace seed,
+  hash seed, and repetition count when comparing implementations.
 - Use the exact implementation names shown by `--help`; these names come from
   the central backend registry and are also used in CSV output.
-- Keep raw CSVs in `results/`; summarize stable conclusions in the relevant
-  documentation or report notes.
+- Keep raw canonical CSVs in `results/`; summarize stable conclusions in the
+  relevant documentation or report notes.
 - Treat small smoke runs as build validation only, not performance evidence.

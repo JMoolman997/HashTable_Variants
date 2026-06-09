@@ -24,8 +24,8 @@ ZIG_GLOBAL_CACHE_DIR=.zig-cache/global zig build check
 | Run only the C test suite | `zig build test` |
 | Build the fixed-capacity library | `zig build libht` |
 | Build the resize-instrumented library | `zig build libht_resize` |
-| Build the steady benchmark binary | `zig build htbench` |
-| Build the resize benchmark binary | `zig build htbench_resize` |
+| Build the benchmark binary | `zig build htbench` |
+| Build the resize-instrumented benchmark binary | `zig build htbench_resize` |
 | Use the Make wrapper | `make check`, `make test`, `make htbench` |
 | Remove build outputs | `make clean` |
 
@@ -51,7 +51,7 @@ ZIG_GLOBAL_CACHE_DIR=.zig-cache/global zig build check
 | `implementations/linear_hashing/` | Linear hashing backend |
 | `implementations/hopscotch/` | Hopscotch backend |
 | `implementations/concurrent/` | Concurrent backends |
-| `bench/` | Benchmark CLI, plans, runners, output, datasets |
+| `bench/` | Benchmark CLI, plans, fixtures, backends, output, datasets |
 | `tests/` | Public API conformance matrix |
 | `docs/` | Algorithm, benchmark, and history notes |
 | `results/` | Ignored local benchmark output |
@@ -163,7 +163,7 @@ Steady-state example:
   --warmup-ops 65536 \
   --repetitions 3 \
   --stats off \
-  --csv
+  --format csv
 ```
 
 Resize example:
@@ -175,8 +175,12 @@ Resize example:
   --timed-ops 1048576 \
   --repetitions 3 \
   --stats off \
-  --csv
+  --format csv
 ```
+
+The default benchmark output is text. `--format csv` emits the canonical
+metric-oriented CSV, with one row per metric per repetition. `--csv` remains as
+a shorthand for `--format csv`.
 
 Benchmark commands:
 
@@ -186,8 +190,6 @@ Benchmark commands:
 - `erase-existing`
 - `workload`
 - `resize-build`
-- `resize-lookup-hit`
-- `resize-lookup-miss`
 - `resize-erase-existing`
 - `resize-workload`
 - `concurrent-lookup`
@@ -229,31 +231,23 @@ See `docs/benchmarking.md` for measurement rules and more examples.
 Style example:
 
 ```c
-static void bench_fill_timing_summary(
-    const bench_plan *plan,
-    const ht_stats   *stats,
+static int bench_add_timing_metrics(
+    bench_metric_set *metrics,
     uint64_t          elapsed_ns,
-    bench_result     *result
+    size_t            timed_ops
 ) {
-    uint64_t total_ops;
+    double ns_per_op;
+    double ops_per_sec;
 
-    if (plan == NULL || stats == NULL || result == NULL) {
-        return;
+    if (metrics == NULL || timed_ops == 0) {
+        return -1;
     }
 
-    memset(result, 0, sizeof(*result));
-    result->elapsed_ns = elapsed_ns;
-    result->stats      = *stats;
+    ns_per_op = (double)elapsed_ns / (double)timed_ops;
+    ops_per_sec = ((double)timed_ops * 1e9) / (double)elapsed_ns;
 
-    if (plan->timed_ops > 0) {
-        result->ns_per_op = (double)elapsed_ns / (double)plan->timed_ops;
-        result->ops_per_sec =
-            ((double)plan->timed_ops * 1e9) / (double)elapsed_ns;
-    }
-
-    total_ops = stats->lookups + stats->inserts + stats->removes;
-    if (total_ops > 0) {
-        result->avg_probe_len = (double)stats->probes / (double)total_ops;
-    }
+    return bench_metric_add_u64(metrics, "elapsed_ns", elapsed_ns) ||
+           bench_metric_add_f64(metrics, "ns_per_op", ns_per_op) ||
+           bench_metric_add_f64(metrics, "ops_per_sec", ops_per_sec);
 }
 ```

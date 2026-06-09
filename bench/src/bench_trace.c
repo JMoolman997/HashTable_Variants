@@ -452,11 +452,9 @@ int bench_trace_build_partitioned_workloads(
     size_t live_base;
     size_t live_rem;
     size_t live_offset;
-    size_t shared_live;
     size_t mutable_live;
     size_t insert_offset;
     size_t i;
-    size_t j;
     int rc = -1;
 
     if (ops_out == NULL || op_counts_out == NULL || thread_count == 0) {
@@ -484,16 +482,6 @@ int bench_trace_build_partitioned_workloads(
             (timed_ops > 0 && insert_keys == NULL)) {
             return -1;
         }
-    } else if (keyspace_mode == BENCH_KEYSPACE_SHARED_MIXED) {
-        if (initial_keys == NULL ||
-            thread_count > SIZE_MAX / 2 ||
-            initial_live < thread_count * 2) {
-            return -1;
-        }
-        if (timed_ops > insert_key_count ||
-            (timed_ops > 0 && insert_keys == NULL)) {
-            return -1;
-        }
     } else if (keyspace_mode != BENCH_KEYSPACE_SHARED_READ) {
         return -1;
     }
@@ -514,16 +502,7 @@ int bench_trace_build_partitioned_workloads(
         op_counts[i] = op_base + ((i < op_rem) ? 1 : 0);
     }
 
-    shared_live = 0;
     mutable_live = initial_live;
-    if (keyspace_mode == BENCH_KEYSPACE_SHARED_MIXED) {
-        shared_live = initial_live / 2;
-        mutable_live = initial_live - shared_live;
-        if (shared_live == 0 || mutable_live < thread_count) {
-            goto cleanup;
-        }
-    } /* Mixed mode reserves a shared read pool plus per-thread mutable keys. */
-
     live_base     = mutable_live / thread_count;
     live_rem      = mutable_live % thread_count;
     live_offset   = 0;
@@ -538,24 +517,16 @@ int bench_trace_build_partitioned_workloads(
         uint64_t thread_seed =
             trace_seed + (BENCH_TRACE_THREAD_SEED * (uint64_t)(i + 1));
 
-        if (keyspace_mode == BENCH_KEYSPACE_DISJOINT ||
-            keyspace_mode == BENCH_KEYSPACE_SHARED_MIXED) {
+        if (keyspace_mode == BENCH_KEYSPACE_DISJOINT) {
             thread_initial_live =
                 live_base + ((i < live_rem) ? 1 : 0);
             thread_insert_count = op_counts[i];
             thread_insert =
                 (thread_insert_count > 0) ? &insert_keys[insert_offset] : NULL;
 
-            if (keyspace_mode == BENCH_KEYSPACE_SHARED_MIXED) {
-                thread_initial = (thread_initial_live > 0)
-                    ? &initial_keys[shared_live + live_offset]
-                    : NULL;
-                thread_keyspace = BENCH_KEYSPACE_DISJOINT;
-            } else {
-                thread_initial = (thread_initial_live > 0)
-                    ? &initial_keys[live_offset]
-                    : NULL;
-            }
+            thread_initial = (thread_initial_live > 0)
+                ? &initial_keys[live_offset]
+                : NULL;
         } /* Disjoint-style modes slice mutable keys by worker. */
 
         if (bench_trace_build_thread_workload(
@@ -572,26 +543,7 @@ int bench_trace_build_partitioned_workloads(
             goto cleanup;
         }
 
-        if (keyspace_mode == BENCH_KEYSPACE_SHARED_MIXED) {
-            for (j = 0; j < op_counts[i]; j++) {
-                size_t idx;
-
-                if (ops[i][j].kind != OP_GET_HIT) {
-                    continue;
-                }
-
-                idx = (size_t)(
-                    bench_splitmix64(
-                        thread_seed + BENCH_TRACE_THREAD_SEED + (uint64_t)j
-                    ) % (uint64_t)shared_live
-                );
-                ops[i][j].key   = initial_keys[idx];
-                ops[i][j].value = initial_keys[idx];
-            }
-        } /* Mixed-mode lookup hits are redirected to the shared read pool. */
-
-        if (keyspace_mode == BENCH_KEYSPACE_DISJOINT ||
-            keyspace_mode == BENCH_KEYSPACE_SHARED_MIXED) {
+        if (keyspace_mode == BENCH_KEYSPACE_DISJOINT) {
             live_offset += thread_initial_live;
             insert_offset += thread_insert_count;
         }

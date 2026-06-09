@@ -1,12 +1,6 @@
 /**
  * @file    bench_names.h
  * @brief   Shared benchmark name helpers.
- *
- * Provides one source of truth for benchmark, implementation, and workload
- * names used by the CLI and CSV output.
- *
- * @author  J.W Moolman
- * @date    2026-04-17
  */
 
 #ifndef BENCH_NAMES_H
@@ -14,87 +8,58 @@
 
 #include "bench_config.h"
 
-/**
- * @brief Return the canonical CLI/CSV name for a benchmark kind.
- */
-const char *bench_kind_name(
-    bench_kind kind
+const char *bench_scenario_name(
+    bench_scenario scenario
 );
 
-/**
- * @brief Return the canonical CLI/CSV name for a workload mix.
- */
+const char *bench_backend_name(
+    bench_backend_kind backend
+);
+
 const char *bench_workload_name(
     workload_kind workload
 );
 
-/**
- * @brief Return the canonical CSV name for a concurrent keyspace mode.
- */
 const char *bench_keyspace_name(
     bench_keyspace_mode keyspace_mode
 );
 
-/**
- * @brief Return the canonical CLI/CSV name for a resize mode.
- */
 const char *bench_resize_mode_name(
     bench_resize_mode resize_mode
 );
 
-/**
- * @brief Return the canonical CLI/CSV name for a stats collection mode.
- */
 const char *bench_stats_mode_name(
     bench_stats_mode stats_mode
 );
 
-/**
- * @brief Parse a canonical benchmark name.
- */
-int bench_parse_kind(
-    const char *text,
-    bench_kind *out
-);
-
-/**
- * @brief Parse a canonical implementation name.
- */
 int bench_parse_impl(
     const char *text,
     ht_impl *out
 );
 
-/**
- * @brief Parse a canonical workload name.
- */
 int bench_parse_workload(
     const char *text,
     workload_kind *out
 );
 
-/**
- * @brief Parse a supported user-facing keyspace name.
- */
 int bench_parse_keyspace(
     const char *text,
     bench_keyspace_mode *out
 );
 
-/**
- * @brief Parse a canonical resize mode name.
- */
 int bench_parse_resize_mode(
     const char *text,
     bench_resize_mode *out
 );
 
-/**
- * @brief Parse a canonical stats collection mode.
- */
 int bench_parse_stats_mode(
     const char *text,
     bench_stats_mode *out
+);
+
+int bench_parse_output_format(
+    const char *text,
+    bench_output_format *out
 );
 
 #endif /* BENCH_NAMES_H */
